@@ -3,11 +3,18 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#3666cf">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Мой журнал">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="icon-192.png">
   <title>Мой журнал — кабинет преподавателя</title>
   <link rel="stylesheet" href="style.css">
   <script src="app.js" defer></script>
+  <script src="offline.js" defer></script>
 </head>
 <body>
+  <div class="offline-bar"><span id="offline-status" role="status" aria-live="polite">Проверяем готовность к работе без интернета…</span><button id="offline-update" type="button" hidden>Обновить приложение</button></div>
   <div id="app"></div>
   <dialog id="slot-dialog" class="modal">
     <form id="slot-form">
