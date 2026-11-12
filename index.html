@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Мой журнал — кабинет преподавателя</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <div id="app"></div>
+  <dialog id="slot-dialog" class="modal">
+    <form id="slot-form">
+      <h2>Настройка пары</h2>
+      <div id="slot-fields" class="filters"></div>
+      <p id="slot-error" role="alert"></p>
+      <div class="actions">
+        <button type="submit" class="primary">Применить</button>
+        <button type="button" data-action="close-slot">Отмена</button>
+        <button type="button" data-action="delete-slot" class="danger">Удалить пару</button>
+      </div>
+    </form>
+  </dialog>
+  <input id="backup-file" type="file" accept=".json,application/json" hidden>
+  <noscript>Для работы журнала включите JavaScript в браузере.</noscript>
+</body>
+</html>
