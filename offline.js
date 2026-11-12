@@ -22,7 +22,7 @@
       channel.port1.onmessage=e=>{clearTimeout(timeout);resolve(e.data?.ready===true);};
       worker.postMessage({type:'CHECK_READY'},[channel.port2]);
     });
-    channel.port1.close();ready=result;renderStatus();
+    channel.port1.close();ready=result;renderStatus();button.hidden=!registration?.waiting;
   }
   const offerUpdate=()=>{button.hidden=!registration?.waiting;};
   navigator.serviceWorker.addEventListener('controllerchange',()=>{
