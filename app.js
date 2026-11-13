@@ -125,6 +125,52 @@ try {
 } catch (e) { loadError = 'Не удалось прочитать локальный журнал: '+e.message+'. Перед сохранением сделайте резервную копию.'; }
 const importedPhoto=normalizeCalendar(data);
 const state = {from:today().slice(0,7)+'-01', to:today(), tab:'Сегодня', date:today(), week:weekOf(today()), group:data.groups[0]?.id || '', subject:0, pair:1, examId:''};
+
+const VIEW_KEY='teacher-last-view-v1';
+let savedView=null;
+try{savedView=JSON.parse(localStorage.getItem(VIEW_KEY)||'null');}catch{}
+function restoreView(view){
+  if(!isObject(view)||!isObject(view.state))return;
+  const v=view.state;
+  if(['Сегодня','Расписание','Журнал','Группы','Аттестация','Сводка','Дела'].includes(v.tab))state.tab=v.tab;
+  if(data.groups.some(g=>g.id===v.group))state.group=v.group;
+  if(Number.isInteger(v.subject)&&v.subject>=0&&v.subject<SUBJECTS.length)state.subject=v.subject;
+  if(Number.isInteger(v.pair)&&v.pair>=1&&v.pair<=TIMES.length)state.pair=v.pair;
+  for(const key of ['date','from','to'])if(isDate(v[key]))state[key]=v[key];
+  if(data.exams.some(e=>e.id===v.examId))state.examId=v.examId;
+  if(view.day===today()&&[1,2].includes(v.week))state.week=v.week;
+  if(view.day!==today()&&state.tab==='Сегодня')state.date=today();
+}
+restoreView(savedView);
+function rememberView(){
+  try{localStorage.setItem(VIEW_KEY,JSON.stringify({day:today(),state:{...state},scroll:{y:window.scrollY||0,areas:[...document.querySelectorAll('.schedule-scroll,.table-wrap')].map(el=>({x:el.scrollLeft||0,y:el.scrollTop||0}))}}));}catch{}
+}
+let restoreScrollOnce=true;
+let renderedViewKey=null;
+function viewContext(){return JSON.stringify([state.tab,state.group,state.subject,state.date,state.pair,state.examId,state.week,state.from,state.to]);}
+function finishViewRender(areas){
+  if(restoreScrollOnce){
+    restoreScrollOnce=false;
+    const position=savedView?.scroll;
+    if(position&&typeof requestAnimationFrame==='function')requestAnimationFrame(()=>{
+      const valid=n=>typeof n==='number'&&Number.isFinite(n)&&n>=0;
+      if(valid(position.y))window.scrollTo(0,position.y);
+      document.querySelectorAll('.schedule-scroll,.table-wrap').forEach((el,i)=>{const p=position.areas?.[i];if(p){if(valid(p.x))el.scrollLeft=p.x;if(valid(p.y))el.scrollTop=p.y;}});
+      rememberView();
+    });
+    else rememberView();
+  }else{
+    if(areas)document.querySelectorAll('.schedule-scroll,.table-wrap').forEach((el,i)=>{if(areas[i]){el.scrollLeft=areas[i].x;el.scrollTop=areas[i].y;}});
+    rememberView();
+  }
+  renderedViewKey=viewContext();
+}
+window.addEventListener('pagehide',rememberView);
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')rememberView();});
+// Capture scrolling inside wide schedule/journal tables as well as page scrolling.
+let viewScrollTimer;
+document.addEventListener('scroll',()=>{clearTimeout(viewScrollTimer);viewScrollTimer=setTimeout(rememberView,150);},true);
+
 let editSlot = null;
 function activeGroup() { return data.groups.find(g => g.id===state.group); }
 function lessonKey() { return `${state.group}|${state.date}|${state.subject}|${state.pair}`; }
@@ -201,10 +247,12 @@ if(typeof setInterval==='function')setInterval(()=>{if(syncScheduleDay())render(
 function groupName(id) { return data.groups.find(g=>g.id===id)?.name || 'Группа не назначена'; }
 function render() {
   syncScheduleDay();
+  const keptAreas=renderedViewKey===viewContext()&&typeof document.querySelectorAll==='function'?[...document.querySelectorAll('.schedule-scroll,.table-wrap')].map(el=>({x:el.scrollLeft||0,y:el.scrollTop||0})):null;
   const titles={'Сегодня':'Ваш учебный день','Расписание':'Расписание занятий','Журнал':'Электронный журнал','Группы':'Учебные группы','Аттестация':'Зачёты и экзамены','Сводка':'Успеваемость и посещаемость','Дела':'Подготовка к занятиям'};
   const subtitles={'Сегодня':'Пары, студенты и важные дела — в одном месте.','Расписание':'Две недели из вашего расписания. Нажмите на пару для перехода в журнал.','Журнал':'Посещаемость, оценки и содержание каждого занятия.','Группы':'Добавляйте студентов списком, по одному ФИО на строку.','Аттестация':'Отдельные ведомости и результаты студентов.','Сводка':'Оценки и пропуски по группе, предмету и периоду.','Дела':'Темы, материалы и небольшие задачи к следующей паре.'};
   $('#app').innerHTML=`<div class="shell"><aside><div class="brand"><span>▤</span><div>Мой журнал<small>Кабинет преподавателя</small></div></div><nav>${['Сегодня','Расписание','Журнал','Группы','Аттестация','Сводка','Дела'].map((t,i)=>`<button data-tab="${t}" class="${state.tab===t?'selected':''}"><span aria-hidden="true">${['◷','▦','▤','♙','✓','▥','☑'][i]}</span>${t}</button>`).join('')}</nav><div class="sidebar-bottom"><span class="avatar">ЯГ</span><div>Гаркушин Я.В.<small>Локальная версия</small></div></div></aside><main><header><div class="crumb">Кабинет преподавателя <span>/ ${state.tab}</span></div><span>Хранение в этом браузере</span></header><div class="page"><div class="heading"><div><p class="eyebrow">2026 / 2027 УЧЕБНЫЙ ГОД</p><h1>${titles[state.tab]}</h1><p class="muted">${subtitles[state.tab]}</p></div><div class="actions"><button data-action="print">Печать</button><button id="save-button" class="primary" data-action="save">Сохранить</button></div></div><div id="save-status" class="save-status" role="status"></div>${loadError?`<div class="error" role="alert">${escapeHTML(loadError)}</div>`:''}<div class="workspace">${renderContent()}</div><footer><span>Данные сохраняются на устройстве. Общую базу можно подключить кнопкой «Аккаунт и синхронизация».</span><div class="actions"><button data-action="backup">↓ Резервная копия</button><button data-action="restore">↑ Восстановить</button></div></footer></div></main></div>`;
   updateStatus();
+  finishViewRender(keptAreas);
 }
 function renderContent() {
   if(state.tab==='Сводка') return renderSummary();

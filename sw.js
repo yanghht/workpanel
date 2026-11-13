@@ -1,6 +1,6 @@
 'use strict';
 // Increase VERSION whenever any app file changes. Each version installs atomically.
-const VERSION = '2026-11-13-sync-2';
+const VERSION = '2026-11-13-view-manual-sync-1';
 const BASE = new URL('./', self.location.href);
 const PREFIX = 'teacher-offline-' + encodeURIComponent(BASE.pathname) + '-';
 const CACHE = PREFIX + VERSION;

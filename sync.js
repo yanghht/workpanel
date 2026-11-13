@@ -5,7 +5,7 @@
   const dialog=document.querySelector('#cloud-dialog'), area=document.querySelector('#cloud-content'), label=document.querySelector('#cloud-status');
   const copy=x=>JSON.parse(JSON.stringify(x));
   const read=key=>{const value=localStorage.getItem(key);return value?JSON.parse(value):null;};
-  let session=null, running=false, timer, conflicts=null, applying=false, refreshPromise, generation=0;
+  let session=null, running=false, conflicts=null, applying=false, refreshPromise, generation=0;
   let message='Синхронизация не подключена';
   try{session=read(AUTH);}catch{}
   const account=()=>session?.user?.id;
@@ -46,8 +46,7 @@
     }return refreshPromise;
   }
   function typing(){return /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName)||document.querySelector('#slot-dialog')?.open;}
-  function changed(){if(applying)return;conflicts=null;schedule();if(account())setMessage(navigator.onLine?'Есть изменения · ожидают отправки':'Без сети · изменения ждут отправки');}
-  function schedule(){clearTimeout(timer);timer=setTimeout(()=>sync(),1200);}
+  function changed(){if(applying)return;conflicts=null;if(account())setMessage('Есть изменения на устройстве · нажмите «Синхронизировать сейчас»');}
   function describe(c){
     const labels={groups:'Группы',students:'Студенты',schedule:'Расписание',lessons:'Занятия',marks:'Отметки',grade:'Оценка',attendance:'Посещаемость',note:'Комментарий',name:'Название / ФИО',topic:'Тема',homework:'Домашнее задание',tasks:'Дела',text:'Текст',done:'Выполнение',room:'Аудитория',subject:'Предмет',type:'Вид занятия',exams:'Аттестация',results:'Результаты',date:'Дата',settings:'Настройки',anchor:'Начало первой недели'};
     return c.path.map(part=>labels[part]||data.groups.find(g=>g.id===part)?.name||data.groups.flatMap(g=>g.students).find(s=>s.id===part)?.name||part).join(' → ');
@@ -65,7 +64,7 @@
     if(!id||running||localStorage.getItem(BIND)!==id)return;
     if(!navigator.onLine){setMessage('Без сети · изменения ждут отправки');return;}
     if(dirty||loadError){setMessage('Синхронизация ждёт сохранения локального журнала');return;}
-    if(typing()&&!choices){schedule();return;}
+    if(typing()&&!choices){setMessage('Синхронизация отложена: завершите ввод и нажмите кнопку синхронизации.');return;}
     if(conflicts&&!choices){setMessage('Нужно выбрать правильные значения · откройте синхронизацию');return;}
     running=true;setMessage('Синхронизируем…');
     try{
@@ -88,7 +87,7 @@
         }
         ensure();
         // Never replace an edit made while the request was in flight.
-        if(!M.equal(data,start)){schedule();setMessage('Новые изменения ожидают отправки');return;}
+        if(!M.equal(data,start)){setMessage('Новые изменения ожидают отправки · нажмите кнопку синхронизации');return;}
         if(!M.equal(data,committed)){
           localStorage.setItem('teacher-cloud-before-merge-'+id,JSON.stringify(data));
           applying=true;const previous=data;data=committed;
@@ -112,11 +111,11 @@
     try{
       const path=signup?'/auth/v1/signup?redirect_to='+encodeURIComponent('https://yanghht.github.io/workpanel/'):'/auth/v1/token?grant_type=password';
       const result=await request(path,{method:'POST',body:{email,password}});
-      if(result.access_token){storeSession(result);setMessage('Вход выполнен. Подключите журнал для синхронизации.');show();if(localStorage.getItem(BIND)===account())schedule();}
+      if(result.access_token){storeSession(result);setMessage('Вход выполнен. Подключите журнал для синхронизации.');show();}
       else{setMessage('Проверьте почту: подтвердите аккаунт по ссылке из письма, затем войдите здесь.');show();}
     }catch(error){setMessage(error.message);show();}
   }
-  async function logout(){const old=session;session=null;generation++;localStorage.removeItem(AUTH);conflicts=null;clearTimeout(timer);setMessage('Вы вышли · журнал остался на этом устройстве');show();if(old&&navigator.onLine)request('/auth/v1/logout',{method:'POST',token:old.access_token}).catch(()=>{});}
+  async function logout(){const old=session;session=null;generation++;localStorage.removeItem(AUTH);conflicts=null;setMessage('Вы вышли · журнал остался на этом устройстве');show();if(old&&navigator.onLine)request('/auth/v1/logout',{method:'POST',token:old.access_token}).catch(()=>{});}
   document.addEventListener('click',e=>{
     const action=e.target.closest('[data-cloud]')?.dataset.cloud;
     if(action==='open')show();
@@ -139,20 +138,18 @@
   document.addEventListener('focusout',()=>{
     setTimeout(()=>{if(document.querySelector('#app').dataset.cloudRefresh==='pending'&&!typing()){delete document.querySelector('#app').dataset.cloudRefresh;render();} },0);
   });
-  window.addEventListener('online',schedule);
+  window.addEventListener('online',()=>{if(account())setMessage('Интернет доступен · для обмена записями нажмите кнопку синхронизации');});
   window.addEventListener('offline',()=>{if(account())setMessage('Без сети · изменения ждут отправки');});
-  window.addEventListener('focus',schedule);
-  window.addEventListener('storage',e=>{if(e.key===AUTH){try{session=read(AUTH);generation++;conflicts=null;setMessage(account()?'Аккаунт изменился · проверяем синхронизацию':'Вы вышли · журнал остался на этом устройстве');schedule();}catch{}}});
-  if(typeof setInterval==='function')setInterval(()=>{if(document.visibilityState==='visible')sync();},30000);
+  window.addEventListener('storage',e=>{if(e.key===AUTH){try{session=read(AUTH);generation++;conflicts=null;setMessage(account()?'Аккаунт изменился · проверяем синхронизацию':'Вы вышли · журнал остался на этом устройстве');}catch{}}});
   globalThis.JournalCloud={changed,sync,show};
   setMessage(account()?'Аккаунт сохранён · проверяем синхронизацию':'Синхронизация не подключена');
   // Email-confirmation links may carry a session. Strip tokens from the address immediately.
-  (async()=>{
+  globalThis.JournalCloud.ready=(async()=>{
     const fragment=new URLSearchParams(location.hash.slice(1));
     if(fragment.has('access_token')){
       history.replaceState(null,'',location.pathname+location.search);
       try{const access=fragment.get('access_token'),user=await request('/auth/v1/user',{token:access});storeSession({access_token:access,refresh_token:fragment.get('refresh_token'),expires_in:Number(fragment.get('expires_in'))||3600,user});setMessage('Почта подтверждена. Подключите журнал.');show();}catch(error){setMessage(error.message);}
     }
-    schedule();
+    await sync();
   })();
 })();
