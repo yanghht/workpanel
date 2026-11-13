@@ -1,7 +1,34 @@
 'use strict';
 (async()=>{
-  const label=document.querySelector('#offline-status'), button=document.querySelector('#offline-update');
+  const label=document.querySelector('#offline-status'), button=document.querySelector('#offline-update'), refreshButton=document.querySelector('#app-refresh');
   let ready=false, registration, refreshing=false;
+  function canReload(){
+    if(typeof dirty!=='undefined'&&dirty){alert('Есть несохранённые изменения. Скачайте резервную копию и устраните ошибку автосохранения перед обновлением.');return false;}
+    return true;
+  }
+  function reloadPage(){if(!canReload())return;if(typeof rememberView==='function')rememberView();location.reload();}
+  function activateUpdate(){
+    if(!registration?.waiting||!canReload())return false;
+    if(typeof rememberView==='function')rememberView();
+    refreshing=true;registration.waiting.postMessage({type:'ACTIVATE_UPDATE'});return true;
+  }
+  refreshButton.addEventListener('click',async()=>{
+    if(refreshButton.disabled||!canReload())return;
+    refreshButton.disabled=true;refreshButton.textContent='Проверяем…';
+    try{
+      if(registration&&navigator.onLine){
+        try{await registration.update();}catch{label.textContent='Проверка обновлений недоступна. Открываем сохранённую версию.';}
+        const worker=registration.installing;
+        if(worker&&!['installed','activated','redundant'].includes(worker.state))await new Promise((resolve,reject)=>{
+          const timeout=setTimeout(()=>{worker.removeEventListener('statechange',check);reject(Error('Новая версия ещё загружается. Нажмите «Обновить» чуть позже.'));},20000);
+          const check=()=>{if(['installed','activated','redundant'].includes(worker.state)){clearTimeout(timeout);worker.removeEventListener('statechange',check);resolve();}};
+          worker.addEventListener('statechange',check);check();
+        });
+      }
+      if(!activateUpdate())reloadPage();
+    }catch(error){label.textContent=error.message;}
+    finally{refreshButton.disabled=false;refreshButton.textContent='↻ Обновить';}
+  });
   const renderStatus=()=>{
     label.textContent=ready
       ? (navigator.onLine?'Готово к работе без интернета · данные на этом устройстве':'Без интернета · журнал работает на этом устройстве')
@@ -26,15 +53,11 @@
   }
   const offerUpdate=()=>{button.hidden=!registration?.waiting;};
   navigator.serviceWorker.addEventListener('controllerchange',()=>{
-    if(refreshing){location.reload();return;}
+    if(refreshing){reloadPage();return;}
     checkReady();
   });
   button.addEventListener('click',()=>{
-    if(typeof dirty!=='undefined'&&dirty){
-      alert('Есть несохранённые изменения. Скачайте резервную копию и устраните ошибку автосохранения перед обновлением.');return;
-    }
-    if(!registration?.waiting)return;
-    refreshing=true;registration.waiting.postMessage({type:'ACTIVATE_UPDATE'});
+    activateUpdate();
   });
   window.addEventListener('offline',renderStatus);
   window.addEventListener('online',()=>{checkReady();registration?.update().catch(()=>{});});
