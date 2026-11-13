@@ -7,6 +7,13 @@ globalThis.JournalMerge=(()=>{
   function merge(base,local,remote,choices={}){
     const conflicts=[];
     function walk(b,l,r,path){
+      // Forms create empty fields even when only one field was edited. For a
+      // newly-created lesson, those untouched defaults are a shared baseline.
+      if(b===undefined&&path[0]==='lessons'&&object(l)&&object(r)){
+        if(path.length===2&&['group','date','subject','pair'].every(k=>equal(l[k],r[k])))
+          b={group:l.group,date:l.date,subject:l.subject,pair:l.pair,topic:'',homework:'',marks:{}};
+        if(path.length===4&&path[2]==='marks')b={attendance:'',grade:'',note:''};
+      }
       if(equal(l,r))return l;
       if(equal(l,b))return r;
       if(equal(r,b))return l;
