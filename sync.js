@@ -63,7 +63,7 @@
     const id=account();
     if(!id||running||localStorage.getItem(BIND)!==id)return;
     if(!navigator.onLine){setMessage('Без сети · изменения ждут отправки');return;}
-    if(dirty||loadError){setMessage('Синхронизация ждёт сохранения локального журнала');return;}
+    if(dirty||loadError){setMessage('Автосохранение не завершено. Скачайте резервную копию и проверьте журнал.');return;}
     if(typing()&&!choices){setMessage('Синхронизация отложена: завершите ввод и нажмите кнопку синхронизации.');return;}
     if(conflicts&&!choices){setMessage('Нужно выбрать правильные значения · откройте синхронизацию');return;}
     running=true;setMessage('Синхронизируем…');
@@ -140,9 +140,9 @@
   });
   window.addEventListener('online',()=>{if(account())setMessage('Интернет доступен · для обмена записями нажмите кнопку синхронизации');});
   window.addEventListener('offline',()=>{if(account())setMessage('Без сети · изменения ждут отправки');});
-  window.addEventListener('storage',e=>{if(e.key===AUTH){try{session=read(AUTH);generation++;conflicts=null;setMessage(account()?'Аккаунт изменился · проверяем синхронизацию':'Вы вышли · журнал остался на этом устройстве');}catch{}}});
+  window.addEventListener('storage',e=>{if(e.key===AUTH){try{session=read(AUTH);generation++;conflicts=null;setMessage(account()?'Аккаунт изменился · синхронизация по кнопке':'Вы вышли · журнал остался на этом устройстве');}catch{}}});
   globalThis.JournalCloud={changed,sync,show};
-  setMessage(account()?'Аккаунт сохранён · проверяем синхронизацию':'Синхронизация не подключена');
+  setMessage(account()?'Аккаунт сохранён · синхронизация по кнопке':'Синхронизация не подключена');
   // Email-confirmation links may carry a session. Strip tokens from the address immediately.
   globalThis.JournalCloud.ready=(async()=>{
     const fragment=new URLSearchParams(location.hash.slice(1));
@@ -150,6 +150,5 @@
       history.replaceState(null,'',location.pathname+location.search);
       try{const access=fragment.get('access_token'),user=await request('/auth/v1/user',{token:access});storeSession({access_token:access,refresh_token:fragment.get('refresh_token'),expires_in:Number(fragment.get('expires_in'))||3600,user});setMessage('Почта подтверждена. Подключите журнал.');show();}catch(error){setMessage(error.message);}
     }
-    await sync();
   })();
 })();

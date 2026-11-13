@@ -31,7 +31,7 @@
   });
   button.addEventListener('click',()=>{
     if(typeof dirty!=='undefined'&&dirty){
-      alert('Есть несохранённые изменения. Сохраните журнал или скачайте резервную копию перед обновлением.');return;
+      alert('Есть несохранённые изменения. Скачайте резервную копию и устраните ошибку автосохранения перед обновлением.');return;
     }
     if(!registration?.waiting)return;
     refreshing=true;registration.waiting.postMessage({type:'ACTIVATE_UPDATE'});

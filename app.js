@@ -107,7 +107,7 @@ const isDate = x => isString(x) && /^\d{4}-\d{2}-\d{2}$/.test(x) && Number.isFin
 function validData(d) {
   const subject = x => Number.isInteger(x) && x>=0 && x<4;
   const pair = x => Number.isInteger(x) && x>=1 && x<=7;
-  return isObject(d) && (d.settings===undefined || (isObject(d.settings) && isDate(d.settings.anchor) && new Date(d.settings.anchor+'T12:00:00Z').getUTCDay()===1)) && (d.tasks===undefined || (Array.isArray(d.tasks) && d.tasks.every(t=>isObject(t)&&isString(t.id)&&isString(t.text)&&isDate(t.date)&&typeof t.done==='boolean'))) && Array.isArray(d.groups) && d.groups.every(g => isObject(g) && isString(g.id) && isString(g.name) && Array.isArray(g.students) && g.students.every(s => isObject(s) && isString(s.id) && isString(s.name)))
+  return isObject(d) && (d.settings===undefined || (isObject(d.settings) && isDate(d.settings.anchor) && new Date(d.settings.anchor+'T12:00:00Z').getUTCDay()===1)) && (d.tasks===undefined || (Array.isArray(d.tasks) && d.tasks.every(t=>isObject(t)&&isString(t.id)&&isString(t.text)&&isDate(t.date)&&typeof t.done==='boolean'))) && Array.isArray(d.groups) && d.groups.every(g => isObject(g) && isString(g.id) && isString(g.name) && (g.deleted===undefined||typeof g.deleted==='boolean') && Array.isArray(g.students) && g.students.every(s => isObject(s) && isString(s.id) && isString(s.name)))
     && Array.isArray(d.schedule) && d.schedule.every(s => isObject(s) && isString(s.id) && [1,2].includes(s.week) && Number.isInteger(s.day) && s.day>=0 && s.day<=5 && pair(s.pair) && subject(s.subject) && isString(s.type) && isString(s.group) && (s.groups===undefined || (Array.isArray(s.groups)&&s.groups.every(isString))) && isString(s.room))
     && isObject(d.lessons) && Object.values(d.lessons).every(l => isObject(l) && isString(l.group) && isDate(l.date) && pair(l.pair) && subject(l.subject) && isString(l.topic) && isString(l.homework) && isObject(l.marks) && Object.values(l.marks).every(m => isObject(m) && ATTENDANCE.includes(m.attendance) && GRADES.includes(m.grade) && isString(m.note)))
     && Array.isArray(d.exams) && d.exams.every(e => isObject(e) && isString(e.id) && isString(e.group) && subject(e.subject) && isDate(e.date) && isString(e.type) && isObject(e.results) && Object.values(e.results).every(x => RESULTS.includes(x)));
@@ -172,7 +172,8 @@ let viewScrollTimer;
 document.addEventListener('scroll',()=>{clearTimeout(viewScrollTimer);viewScrollTimer=setTimeout(rememberView,150);},true);
 
 let editSlot = null;
-function activeGroup() { return data.groups.find(g => g.id===state.group); }
+function activeGroups() { return data.groups.filter(g=>!g.deleted); }
+function activeGroup() { return activeGroups().find(g => g.id===state.group); }
 function lessonKey() { return `${state.group}|${state.date}|${state.subject}|${state.pair}`; }
 function lesson(create=false) {
   const key = lessonKey();
@@ -184,13 +185,13 @@ function changed() {
   dirty=true;
   save(true);
 }
-function updateStatus() { $('#save-status').textContent=status; $('#save-button').disabled=!dirty; }
+function updateStatus() { $('#save-status').textContent=status; }
 function save(automatic=false) {
   try {
     const current = localStorage.getItem(STORAGE_KEY);
     if (lastStored !== current) {
       if (automatic) {
-        status='Не сохранено: журнал изменён в другой вкладке. Скачайте копию и обновите страницу либо нажмите «Сохранить».';
+        status='Не сохранено: журнал изменён в другой вкладке. Скачайте копию и обновите страницу.';
         updateStatus();
         return false;
       }
@@ -198,7 +199,7 @@ function save(automatic=false) {
     }
     if (loadError) {
       if (automatic) {
-        status='Автосохранение остановлено: прежние данные не удалось прочитать. Сделайте резервную копию и нажмите «Сохранить».';
+        status='Автосохранение остановлено: прежние данные не удалось прочитать. Скачайте копию, затем восстановите журнал из исправной резервной копии.';
         updateStatus();
         return false;
       }
@@ -230,13 +231,13 @@ function options(values, selected, empty='—') { return values.map(x => `<optio
 function selectField(label, name, values, selected) {
   return `<label>${label}<select data-filter="${name}">${values.map(([value,text])=>`<option value="${escapeHTML(value)}" ${String(value)===String(selected)?'selected':''}>${escapeHTML(text)}</option>`).join('')}</select></label>`;
 }
-function groupSelect() { return selectField('Группа','group',data.groups.map(g=>[g.id,g.name]),state.group); }
+function groupSelect() { return selectField('Группа','group',activeGroups().map(g=>[g.id,g.name]),state.group); }
 function subjectSelect() { return selectField('Предмет','subject',SUBJECTS.map((x,i)=>[i,x]),state.subject); }
 function download(name, content, type='application/json;charset=utf-8') {
   const url=URL.createObjectURL(new Blob(['\uFEFF'+content], {type}));
   const a=document.createElement('a'); a.href=url; a.download=name; a.click(); setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
-function slotGroups(slot) { return [...new Set(slot.groups ?? (slot.group ? [slot.group] : []))]; }
+function slotGroups(slot) { return [...new Set(slot.groups ?? (slot.group ? [slot.group] : []))].filter(id=>activeGroups().some(g=>g.id===id)); }
 function slotGroupNames(slot) { return slotGroups(slot).map(groupName).join(', ') || 'Группы не назначены'; }
 function slotGroupLinks(slot) { return slotGroups(slot).map(id=>`<button class="group-journal" data-open="${escapeHTML(slot.id)}" data-open-group="${escapeHTML(id)}">${escapeHTML(groupName(id))} →</button>`).join(''); }
 let scheduleDay=today();
@@ -247,10 +248,12 @@ if(typeof setInterval==='function')setInterval(()=>{if(syncScheduleDay())render(
 function groupName(id) { return data.groups.find(g=>g.id===id)?.name || 'Группа не назначена'; }
 function render() {
   syncScheduleDay();
+  if(!activeGroup())state.group=activeGroups()[0]?.id||'';
+  if(state.examId&&!data.exams.some(e=>e.id===state.examId&&activeGroups().some(g=>g.id===e.group)))state.examId='';
   const keptAreas=renderedViewKey===viewContext()&&typeof document.querySelectorAll==='function'?[...document.querySelectorAll('.schedule-scroll,.table-wrap')].map(el=>({x:el.scrollLeft||0,y:el.scrollTop||0})):null;
   const titles={'Сегодня':'Ваш учебный день','Расписание':'Расписание занятий','Журнал':'Электронный журнал','Группы':'Учебные группы','Аттестация':'Зачёты и экзамены','Сводка':'Успеваемость и посещаемость','Дела':'Подготовка к занятиям'};
   const subtitles={'Сегодня':'Пары, студенты и важные дела — в одном месте.','Расписание':'Две недели из вашего расписания. Нажмите на пару для перехода в журнал.','Журнал':'Посещаемость, оценки и содержание каждого занятия.','Группы':'Добавляйте студентов списком, по одному ФИО на строку.','Аттестация':'Отдельные ведомости и результаты студентов.','Сводка':'Оценки и пропуски по группе, предмету и периоду.','Дела':'Темы, материалы и небольшие задачи к следующей паре.'};
-  $('#app').innerHTML=`<div class="shell"><aside><div class="brand"><span>▤</span><div>Мой журнал<small>Кабинет преподавателя</small></div></div><nav>${['Сегодня','Расписание','Журнал','Группы','Аттестация','Сводка','Дела'].map((t,i)=>`<button data-tab="${t}" class="${state.tab===t?'selected':''}"><span aria-hidden="true">${['◷','▦','▤','♙','✓','▥','☑'][i]}</span>${t}</button>`).join('')}</nav><div class="sidebar-bottom"><span class="avatar">ЯГ</span><div>Гаркушин Я.В.<small>Локальная версия</small></div></div></aside><main><header><div class="crumb">Кабинет преподавателя <span>/ ${state.tab}</span></div><span>Хранение в этом браузере</span></header><div class="page"><div class="heading"><div><p class="eyebrow">2026 / 2027 УЧЕБНЫЙ ГОД</p><h1>${titles[state.tab]}</h1><p class="muted">${subtitles[state.tab]}</p></div><div class="actions"><button data-action="print">Печать</button><button id="save-button" class="primary" data-action="save">Сохранить</button></div></div><div id="save-status" class="save-status" role="status"></div>${loadError?`<div class="error" role="alert">${escapeHTML(loadError)}</div>`:''}<div class="workspace">${renderContent()}</div><footer><span>Данные сохраняются на устройстве. Общую базу можно подключить кнопкой «Аккаунт и синхронизация».</span><div class="actions"><button data-action="backup">↓ Резервная копия</button><button data-action="restore">↑ Восстановить</button></div></footer></div></main></div>`;
+  $('#app').innerHTML=`<div class="shell"><aside><div class="brand"><span>▤</span><div>Мой журнал<small>Кабинет преподавателя</small></div></div><nav>${['Сегодня','Расписание','Журнал','Группы','Аттестация','Сводка','Дела'].map((t,i)=>`<button data-tab="${t}" class="${state.tab===t?'selected':''}"><span aria-hidden="true">${['◷','▦','▤','♙','✓','▥','☑'][i]}</span>${t}</button>`).join('')}</nav><div class="sidebar-bottom"><span class="avatar">ЯГ</span><div>Гаркушин Я.В.<small>Локальная версия</small></div></div></aside><main><header><div class="crumb">Кабинет преподавателя <span>/ ${state.tab}</span></div><span>Хранение в этом браузере</span></header><div class="page"><div class="heading"><div><p class="eyebrow">2026 / 2027 УЧЕБНЫЙ ГОД</p><h1>${titles[state.tab]}</h1><p class="muted">${subtitles[state.tab]}</p></div><div class="actions"><button data-action="print">Печать</button></div></div><div id="save-status" class="save-status" role="status"></div>${loadError?`<div class="error" role="alert">${escapeHTML(loadError)}</div>`:''}<div class="workspace">${renderContent()}</div><footer><span>Данные сохраняются на устройстве. Общую базу можно подключить кнопкой «Аккаунт и синхронизация».</span><div class="actions"><button data-action="backup">↓ Резервная копия</button><button data-action="restore">↑ Восстановить</button></div></footer></div></main></div>`;
   updateStatus();
   finishViewRender(keptAreas);
 }
@@ -266,14 +269,23 @@ function renderContent() {
 function renderToday() {
   const day=(new Date(state.date+'T12:00:00Z').getUTCDay()+6)%7;
   const slots=data.schedule.filter(s=>s.week===weekOf(state.date)&&s.day===day).sort((a,b)=>a.pair-b.pair);
-  return `<div class="stats"><div><small>Пары на выбранный день</small><strong>${slots.length}<span>пар</span></strong></div><div><small>Ваши группы</small><strong>${data.groups.length}<span>групп</span></strong></div><div><small>Студенты в журнале</small><strong>${data.groups.reduce((n,g)=>n+g.students.length,0)}<span>человек</span></strong></div></div><div class="section-head"><div><h2>Расписание на день</h2><p class="muted">${new Date(state.date+'T12:00:00Z').toLocaleDateString('ru-RU',{weekday:'long',day:'numeric',month:'long'})} · ${weekOf(state.date)} неделя</p></div><input aria-label="Дата" type="date" data-filter="date" value="${state.date}"></div><div class="today-layout"><section class="lesson-list">${slots.length?slots.map(s=>`<article class="lesson-card"><div class="time"><b>${TIMES[s.pair-1].split('–')[0]}</b><span>${TIMES[s.pair-1].split('–')[1]}</span><small>${s.pair} пара</small></div><div class="lesson-info"><span class="tag color${s.subject}">${escapeHTML(s.type)}</span><h3>${SUBJECTS[s.subject]}</h3><p>${escapeHTML(slotGroupNames(s))}${s.room?' · ауд. '+escapeHTML(s.room):''}</p></div>${s.sourceNote?`<small class="source-warning">⚠ ${escapeHTML(s.sourceNote)}</small>`:''}<div class="group-links">${slotGroupLinks(s)}${slotGroups(s).length?'':`<button data-edit-slot="${escapeHTML(s.id)}">Назначить группы</button>`}</div></article>`).join(''):'<div class="empty"><h3>На этот день пар нет</h3><p>Можно заполнить журнал или подготовить ведомости.</p></div>'}</section><section class="panel"><p class="eyebrow">БЫСТРЫЙ СТАРТ</p><h2>Всё готово к занятиям</h2><p class="muted">Добавьте студентов и назначьте группы парам.</p><button class="wide" data-tab="Группы">Добавить студентов →</button><button class="wide" data-tab="Расписание">Настроить пары →</button><div class="note">Текущая неделя определяется автоматически по сегодняшней дате.</div></section></div>`;
+  return `<div class="stats"><div><small>Пары на выбранный день</small><strong>${slots.length}<span>пар</span></strong></div><div><small>Ваши группы</small><strong>${activeGroups().length}<span>групп</span></strong></div><div><small>Студенты в журнале</small><strong>${activeGroups().reduce((n,g)=>n+g.students.length,0)}<span>человек</span></strong></div></div><div class="section-head"><div><h2>Расписание на день</h2><p class="muted">${new Date(state.date+'T12:00:00Z').toLocaleDateString('ru-RU',{weekday:'long',day:'numeric',month:'long'})} · ${weekOf(state.date)} неделя</p></div><input aria-label="Дата" type="date" data-filter="date" value="${state.date}"></div><div class="today-layout"><section class="lesson-list">${slots.length?slots.map(s=>`<article class="lesson-card"><div class="time"><b>${TIMES[s.pair-1].split('–')[0]}</b><span>${TIMES[s.pair-1].split('–')[1]}</span><small>${s.pair} пара</small></div><div class="lesson-info"><span class="tag color${s.subject}">${escapeHTML(s.type)}</span><h3>${SUBJECTS[s.subject]}</h3><p>${escapeHTML(slotGroupNames(s))}${s.room?' · ауд. '+escapeHTML(s.room):''}</p></div>${s.sourceNote?`<small class="source-warning">⚠ ${escapeHTML(s.sourceNote)}</small>`:''}<div class="group-links">${slotGroupLinks(s)}${slotGroups(s).length?'':`<button data-edit-slot="${escapeHTML(s.id)}">Назначить группы</button>`}</div></article>`).join(''):'<div class="empty"><h3>На этот день пар нет</h3><p>Можно заполнить журнал или подготовить ведомости.</p></div>'}</section><section class="panel"><p class="eyebrow">БЫСТРЫЙ СТАРТ</p><h2>Всё готово к занятиям</h2><p class="muted">Добавьте студентов и назначьте группы парам.</p><button class="wide" data-tab="Группы">Добавить студентов →</button><button class="wide" data-tab="Расписание">Настроить пары →</button><div class="note">Текущая неделя определяется автоматически по сегодняшней дате.</div></section></div>`;
 }
 function renderSchedule() {
   return `<div class="toolbar"><div class="segmented">${[1,2].map(w=>`<button data-week="${w}" class="${state.week===w?'active':''}">${w} неделя</button>`).join('')}</div><button data-new-slot="0,1">+ Добавить пару</button></div><div class="schedule-scroll"><div class="schedule-grid"><div class="day-title">Пара / время</div>${DAYS.map(d=>`<div class="day-title">${d}</div>`).join('')}${TIMES.map((time,p)=>`<div class="schedule-row"><div class="period"><b>${p+1} пара</b><small>${time}</small></div>${DAYS.map((_,day)=>{const s=data.schedule.find(x=>x.week===state.week&&x.day===day&&x.pair===p+1);return `<div class="slot">${s?`<div class="slot-card color${s.subject}"><button class="slot-main" data-open="${escapeHTML(s.id)}"><small>${escapeHTML(s.type)}</small><b>${SUBJECTS[s.subject]}</b><span>${escapeHTML(slotGroupNames(s))}</span>${s.room?`<span>ауд. ${escapeHTML(s.room)}</span>`:''}${s.sourceNote?`<small class="source-warning">⚠ ${escapeHTML(s.sourceNote)}</small>`:''}</button><div class="group-links">${slotGroupLinks(s)}</div><button class="edit-slot" aria-label="Изменить пару" data-edit-slot="${escapeHTML(s.id)}">⚙</button></div>`:`<button class="add-slot" aria-label="Добавить ${p+1} пару: ${DAYS[day]}" data-new-slot="${day},${p+1}">+</button>`}</div>`}).join('')}</div>`).join('')}</div></div><p class="muted">${data.schedule.filter(s=>s.week===state.week).length} пар · ${data.schedule.filter(s=>s.week===state.week).length*2} академических часов. Нажмите ⚙, чтобы назначить группу и аудиторию.</p>`;
 }
+function renderDeletedGroups(){
+  const groups=data.groups.filter(g=>g.deleted);
+  return groups.length?`<details class="panel deleted-groups"><summary>Удалённые группы · ${groups.length}</summary><p class="muted">История занятий и списки студентов сохранены. При восстановлении вернутся назначения в расписании.</p>${groups.map(g=>`<div class="deleted-group"><span>${escapeHTML(g.name)}</span><button type="button" data-restore-group="${escapeHTML(g.id)}">Восстановить</button></div>`).join('')}</details>`:'';
+}
+function restoreGroup(id){
+  const g=data.groups.find(g=>g.id===id&&g.deleted);if(!g)return;
+  if(activeGroups().some(x=>x.name.toLocaleLowerCase('ru-RU')===g.name.toLocaleLowerCase('ru-RU'))){alert('Сначала переименуйте действующую группу с таким же названием.');return;}
+  g.deleted=false;state.group=g.id;changed();render();$('#group-message').textContent='Группа восстановлена.';
+}
 function renderGroups() {
   const g=activeGroup();
-  return `<div class="filters">${groupSelect()}<label>Новая группа<input id="new-group" placeholder="Название группы"></label><button type="button" data-action="add-group">+ Создать группу</button></div><p id="group-message" role="status" aria-live="polite"></p><div class="two-columns"><section class="panel"><h2>Список студентов</h2><p class="muted">По одному ФИО на строку. Новые имена добавятся к текущему списку.</p><textarea id="roster" rows="9" placeholder="Иванов Иван Иванович&#10;Петрова Анна Сергеевна" aria-label="Список студентов"></textarea><button class="primary" data-action="add-students" ${g?'':'disabled'}>+ Добавить в группу</button></section><section class="panel"><h2>${escapeHTML(g?.name||'Нет групп')} <span class="count">${g?.students.length||0}</span></h2>${g?.students.length?`<ol class="roster">${g.students.map(s=>`<li><span>${escapeHTML(s.name)}</span><button data-rename-student="${escapeHTML(s.id)}">Изменить</button></li>`).join('')}</ol>`:'<p class="muted">Список пока не добавлен.</p>'}</section></div>`;
+  return `<div class="filters">${groupSelect()}<label>Новая группа<input id="new-group" placeholder="Название группы"></label><button type="button" data-action="add-group">+ Создать группу</button></div><div class="actions group-tools"><button type="button" data-action="rename-group" ${g?'':'disabled'}>Изменить название</button><button type="button" data-action="delete-group" class="danger" ${g?'':'disabled'}>Удалить группу</button></div><p id="group-message" role="status" aria-live="polite"></p>${renderDeletedGroups()}<div class="two-columns"><section class="panel"><h2>Список студентов</h2><p class="muted">По одному ФИО на строку. Новые имена добавятся к текущему списку.</p><textarea id="roster" rows="9" placeholder="Иванов Иван Иванович&#10;Петрова Анна Сергеевна" aria-label="Список студентов"></textarea><button class="primary" data-action="add-students" ${g?'':'disabled'}>+ Добавить в группу</button></section><section class="panel"><h2>${escapeHTML(g?.name||'Нет групп')} <span class="count">${g?.students.length||0}</span></h2>${g?.students.length?`<ol class="roster">${g.students.map(s=>`<li><span>${escapeHTML(s.name)}</span><button data-rename-student="${escapeHTML(s.id)}">Изменить</button></li>`).join('')}</ol>`:'<p class="muted">Список пока не добавлен.</p>'}</section></div>`;
 }
 function renderJournal() {
   const g=activeGroup(), l=lesson(), students=g?.students||[];
@@ -282,7 +294,7 @@ function renderJournal() {
 }
 function renderExams() {
   const exam=data.exams.find(e=>e.id===state.examId);
-  return `<section class="panel"><h2>Новая ведомость</h2><div class="filters">${groupSelect()}${subjectSelect()}<label>Форма<select id="exam-type">${options(['Экзамен','Дифференцированный зачёт','Зачёт'],'Экзамен')}</select></label><label>Дата<input id="exam-date" type="date" value="${state.date}"></label><button class="primary" data-action="add-exam" ${state.group?'':'disabled'}>+ Создать</button></div></section><div class="filters">${selectField('Ведомость','examId',[['','Выберите ведомость'],...data.exams.map(e=>[e.id,`${e.date} · ${groupName(e.group)} · ${SUBJECTS[e.subject]} · ${e.type}`])],state.examId)}</div>${exam?`<div class="section-head"><div><h2>${escapeHTML(exam.type)}: ${SUBJECTS[exam.subject]}</h2><p class="muted">${exam.date} · ${escapeHTML(groupName(exam.group))}</p></div><button data-action="export-exam">↓ CSV для Excel</button></div><div class="table-wrap"><table><thead><tr><th>Студент</th><th>Результат</th></tr></thead><tbody>${(data.groups.find(g=>g.id===exam.group)?.students||[]).map(s=>`<tr><td>${escapeHTML(s.name)}</td><td><select data-result="${escapeHTML(s.id)}" aria-label="Результат ${escapeHTML(s.name)}">${options(RESULTS,exam.results[s.id],'Не выставлен')}</select></td></tr>`).join('')}</tbody></table></div>`:'<div class="empty"><h3>Ведомости под вашим контролем</h3><p>Создайте экзамен или зачёт, чтобы отмечать допуск и результаты.</p></div>'}`;
+  return `<section class="panel"><h2>Новая ведомость</h2><div class="filters">${groupSelect()}${subjectSelect()}<label>Форма<select id="exam-type">${options(['Экзамен','Дифференцированный зачёт','Зачёт'],'Экзамен')}</select></label><label>Дата<input id="exam-date" type="date" value="${state.date}"></label><button class="primary" data-action="add-exam" ${state.group?'':'disabled'}>+ Создать</button></div></section><div class="filters">${selectField('Ведомость','examId',[['','Выберите ведомость'],...data.exams.filter(e=>activeGroups().some(g=>g.id===e.group)).map(e=>[e.id,`${e.date} · ${groupName(e.group)} · ${SUBJECTS[e.subject]} · ${e.type}`])],state.examId)}</div>${exam?`<div class="section-head"><div><h2>${escapeHTML(exam.type)}: ${SUBJECTS[exam.subject]}</h2><p class="muted">${exam.date} · ${escapeHTML(groupName(exam.group))}</p></div><button data-action="export-exam">↓ CSV для Excel</button></div><div class="table-wrap"><table><thead><tr><th>Студент</th><th>Результат</th></tr></thead><tbody>${(data.groups.find(g=>g.id===exam.group)?.students||[]).map(s=>`<tr><td>${escapeHTML(s.name)}</td><td><select data-result="${escapeHTML(s.id)}" aria-label="Результат ${escapeHTML(s.name)}">${options(RESULTS,exam.results[s.id],'Не выставлен')}</select></td></tr>`).join('')}</tbody></table></div>`:'<div class="empty"><h3>Ведомости под вашим контролем</h3><p>Создайте экзамен или зачёт, чтобы отмечать допуск и результаты.</p></div>'}`;
 }
 function openSlot(slot, requestedGroup) {
   const groups=slotGroups(slot);
@@ -295,7 +307,7 @@ function openSlot(slot, requestedGroup) {
 function showSlot(slot) {
   editSlot={...slot};
   const field=(label,name,values,selected)=>`<label>${label}<select name="${name}">${values.map(([v,t])=>`<option value="${escapeHTML(v)}" ${String(v)===String(selected)?'selected':''}>${escapeHTML(t)}</option>`).join('')}</select></label>`;
-  $('#slot-fields').innerHTML=field('Неделя','week',[[1,'1 неделя'],[2,'2 неделя']],slot.week)+field('День','day',DAYS.map((d,i)=>[i,d]),slot.day)+field('Пара','pair',TIMES.map((t,i)=>[i+1,`${i+1} · ${t}`]),slot.pair)+field('Предмет','subject',SUBJECTS.map((s,i)=>[i,s]),slot.subject)+`<fieldset class="slot-groups"><legend>Группы на паре</legend>${data.groups.map(g=>`<label><input type="checkbox" name="groups" value="${escapeHTML(g.id)}" ${slotGroups(slot).includes(g.id)?'checked':''}>${escapeHTML(g.name)}</label>`).join('')}<small>Можно выбрать несколько групп.</small></fieldset>`+field('Вид занятия','type',[['Практика','Практика'],['Лекция','Лекция']],slot.type)+`<label>Аудитория<input name="room" value="${escapeHTML(slot.room)}"></label>`;
+  $('#slot-fields').innerHTML=field('Неделя','week',[[1,'1 неделя'],[2,'2 неделя']],slot.week)+field('День','day',DAYS.map((d,i)=>[i,d]),slot.day)+field('Пара','pair',TIMES.map((t,i)=>[i+1,`${i+1} · ${t}`]),slot.pair)+field('Предмет','subject',SUBJECTS.map((s,i)=>[i,s]),slot.subject)+`<fieldset class="slot-groups"><legend>Группы на паре</legend>${activeGroups().map(g=>`<label><input type="checkbox" name="groups" value="${escapeHTML(g.id)}" ${slotGroups(slot).includes(g.id)?'checked':''}>${escapeHTML(g.name)}</label>`).join('')}<small>Можно выбрать несколько групп.</small></fieldset>`+field('Вид занятия','type',[['Практика','Практика'],['Лекция','Лекция']],slot.type)+`<label>Аудитория<input name="room" value="${escapeHTML(slot.room)}"></label>`;
   $('#slot-error').textContent=slot.sourceNote||''; $('[data-action="delete-slot"]').hidden=!data.schedule.some(s=>s.id===slot.id); $('#slot-dialog').showModal();
 }
 $('#slot-form').addEventListener('submit',e=>{
@@ -309,16 +321,27 @@ function csv(name, rows) {
   download(name,rows.map(r=>r.map(cell).join(';')).join('\r\n'),'text/csv;charset=utf-8');
 }
 const actions={
-  save,
   print:()=>window.print(),
   'add-task':()=>{const text=$('#task-text').value.trim(), date=$('#task-date').value;if(!text)return alert('Введите задачу');if(!isDate(date))return alert('Выберите срок');data.tasks.push({id:uid(),text,date,done:false});changed();render();},
   'summary-csv':()=>{if(state.from>state.to)return alert('Начало периода должно быть раньше окончания');csv('Сводка.csv',[['Студент','Средний балл','Присутствовал','Пропуски','Уважительные','Опоздания','Не отмечено'],...summaryRows().map(r=>[r.name,r.avg,r.present,r.absent,r.excused,r.late,r.unknown])]);},
   backup:()=>download('Резервная-копия-журнала.json',JSON.stringify(data,null,2)),
   restore:()=>$('#backup-file').click(),
+  'rename-group':()=>{
+    const g=activeGroup();if(!g)return;
+    const answer=prompt('Новое название группы',g.name);if(answer===null)return;const name=answer.trim();
+    if(!name){$('#group-message').textContent='Название не может быть пустым.';return;}
+    if(activeGroups().some(x=>x.id!==g.id&&x.name.toLocaleLowerCase('ru-RU')===name.toLocaleLowerCase('ru-RU'))){$('#group-message').textContent='Группа с таким названием уже существует.';return;}
+    g.name=name;changed();render();$('#group-message').textContent='Название группы изменено.';
+  },
+  'delete-group':()=>{
+    const g=activeGroup();if(!g)return;
+    if(!confirm('Убрать группу «'+g.name+'» из списков и расписания? История и студенты сохранятся; группу можно восстановить в разделе «Удалённые группы».'))return;
+    g.deleted=true;state.group=activeGroups()[0]?.id||'';changed();render();$('#group-message').textContent='Группа удалена из действующих. Её можно восстановить ниже.';
+  },
   'add-group':()=>{
     const input=$('#new-group'), message=$('#group-message'), name=input.value.trim();
     if(!name){message.textContent='Введите название новой группы в поле «Новая группа».';input.focus();return;}
-    if(data.groups.some(g=>g.name.toLocaleLowerCase('ru-RU')===name.toLocaleLowerCase('ru-RU'))){message.textContent='Такая группа уже есть. Выберите её в списке слева.';input.focus();return;}
+    if(activeGroups().some(g=>g.name.toLocaleLowerCase('ru-RU')===name.toLocaleLowerCase('ru-RU'))){message.textContent='Такая группа уже есть. Выберите её в списке слева.';input.focus();return;}
     const g={id:uid(),name,students:[]};data.groups.push(g);state.group=g.id;changed();render();
     $('#group-message').textContent='Группа «'+name+'» создана. Теперь добавьте студентов.';
   },
@@ -334,6 +357,7 @@ document.addEventListener('click',e=>{
   const b=e.target.closest('button');if(!b)return;
   if(b.dataset.taskToggle){const t=data.tasks.find(t=>t.id===b.dataset.taskToggle);if(t){t.done=!t.done;changed();render();}return;}
   if(b.dataset.taskDelete){if(confirm('Удалить задачу?')){data.tasks=data.tasks.filter(t=>t.id!==b.dataset.taskDelete);changed();render();}return;}
+  if(b.dataset.restoreGroup){restoreGroup(b.dataset.restoreGroup);return;}
   if(b.dataset.action) return actions[b.dataset.action]?.();
   if(b.dataset.tab) {state.tab=b.dataset.tab;if(state.tab==='Расписание')state.week=weekOf(today());render();}
   if(b.dataset.week) {state.week=Number(b.dataset.week);render();}
@@ -353,11 +377,11 @@ document.addEventListener('change',e=>{
 function updateMark(el) { const l=lesson(true);const id=el.dataset.student;l.marks[id]={...(l.marks[id]||{attendance:'',grade:'',note:''}),[el.dataset.mark]:el.value};changed(); }
 document.addEventListener('input',e=>{
   const el=e.target;
-  if(el.dataset.lesson){lesson(true)[el.dataset.lesson]=el.value;changed();}
+  if(el.dataset.lesson&&activeGroup()){lesson(true)[el.dataset.lesson]=el.value;changed();}
   if(el.dataset.mark&&el.tagName==='INPUT')updateMark(el);
 });
 $('#backup-file').addEventListener('change',async e=>{
-  try {const file=e.target.files[0];if(!file)return;if(file.size>10000000)throw Error('Файл больше 10 МБ');const d=JSON.parse((await file.text()).replace(/^\uFEFF/,''));if(!validData(d))throw Error('Неверный формат резервной копии');if(!confirm('Заменить текущий журнал данными из копии? Для отмены сначала скачайте текущую резервную копию.'))return;data=d;normalizeCalendar(data);state.group=d.groups[0]?.id||'';state.examId='';state.week=weekOf(today());changed();render();}catch(err){alert('Не удалось восстановить журнал: '+err.message);}finally{e.target.value='';}
+  try {const file=e.target.files[0];if(!file)return;if(file.size>10000000)throw Error('Файл больше 10 МБ');const d=JSON.parse((await file.text()).replace(/^\uFEFF/,''));if(!validData(d))throw Error('Неверный формат резервной копии');if(!confirm('Заменить текущий журнал данными из копии? Для отмены сначала скачайте текущую резервную копию.'))return;data=d;loadError='';normalizeCalendar(data);state.group=d.groups[0]?.id||'';state.examId='';state.week=weekOf(today());changed();render();}catch(err){alert('Не удалось восстановить журнал: '+err.message);}finally{e.target.value='';}
 });
 
 function summaryRows() {
