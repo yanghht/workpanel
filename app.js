@@ -1,6 +1,6 @@
 'use strict';
 
-// Локальная версия: без сервера, внешних библиотек и сетевых запросов.
+// Журнал хранится локально; модуль sync.js подключает общую базу по желанию.
 const STORAGE_KEY = 'teacher-diary-local-v1';
 const SUBJECTS = ['Теория вероятностей и математическая статистика', 'Дискретная математика с элементами математической логики', 'Элементы высшей математики', 'Математические методы решения прикладных профессиональных задач'];
 const DAYS = ['Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота'];
@@ -163,6 +163,7 @@ function save(automatic=false) {
     dirty=false; loadError='';
     status='Автоматически сохранено · '+new Date().toLocaleTimeString('ru-RU');
     updateStatus();
+    globalThis.JournalCloud?.changed();
     return true;
   } catch(e) {
     status='Не удалось сохранить: '+e.message+'. Скачайте резервную копию.';
@@ -202,7 +203,7 @@ function render() {
   syncScheduleDay();
   const titles={'Сегодня':'Ваш учебный день','Расписание':'Расписание занятий','Журнал':'Электронный журнал','Группы':'Учебные группы','Аттестация':'Зачёты и экзамены','Сводка':'Успеваемость и посещаемость','Дела':'Подготовка к занятиям'};
   const subtitles={'Сегодня':'Пары, студенты и важные дела — в одном месте.','Расписание':'Две недели из вашего расписания. Нажмите на пару для перехода в журнал.','Журнал':'Посещаемость, оценки и содержание каждого занятия.','Группы':'Добавляйте студентов списком, по одному ФИО на строку.','Аттестация':'Отдельные ведомости и результаты студентов.','Сводка':'Оценки и пропуски по группе, предмету и периоду.','Дела':'Темы, материалы и небольшие задачи к следующей паре.'};
-  $('#app').innerHTML=`<div class="shell"><aside><div class="brand"><span>▤</span><div>Мой журнал<small>Кабинет преподавателя</small></div></div><nav>${['Сегодня','Расписание','Журнал','Группы','Аттестация','Сводка','Дела'].map((t,i)=>`<button data-tab="${t}" class="${state.tab===t?'selected':''}"><span aria-hidden="true">${['◷','▦','▤','♙','✓','▥','☑'][i]}</span>${t}</button>`).join('')}</nav><div class="sidebar-bottom"><span class="avatar">ЯГ</span><div>Гаркушин Я.В.<small>Локальная версия</small></div></div></aside><main><header><div class="crumb">Кабинет преподавателя <span>/ ${state.tab}</span></div><span>Хранение в этом браузере</span></header><div class="page"><div class="heading"><div><p class="eyebrow">2026 / 2027 УЧЕБНЫЙ ГОД</p><h1>${titles[state.tab]}</h1><p class="muted">${subtitles[state.tab]}</p></div><div class="actions"><button data-action="print">Печать</button><button id="save-button" class="primary" data-action="save">Сохранить</button></div></div><div id="save-status" class="save-status" role="status"></div>${loadError?`<div class="error" role="alert">${escapeHTML(loadError)}</div>`:''}<div class="workspace">${renderContent()}</div><footer><span>Данные хранятся только в этом браузере. Для переноса используйте резервную копию.</span><div class="actions"><button data-action="backup">↓ Резервная копия</button><button data-action="restore">↑ Восстановить</button></div></footer></div></main></div>`;
+  $('#app').innerHTML=`<div class="shell"><aside><div class="brand"><span>▤</span><div>Мой журнал<small>Кабинет преподавателя</small></div></div><nav>${['Сегодня','Расписание','Журнал','Группы','Аттестация','Сводка','Дела'].map((t,i)=>`<button data-tab="${t}" class="${state.tab===t?'selected':''}"><span aria-hidden="true">${['◷','▦','▤','♙','✓','▥','☑'][i]}</span>${t}</button>`).join('')}</nav><div class="sidebar-bottom"><span class="avatar">ЯГ</span><div>Гаркушин Я.В.<small>Локальная версия</small></div></div></aside><main><header><div class="crumb">Кабинет преподавателя <span>/ ${state.tab}</span></div><span>Хранение в этом браузере</span></header><div class="page"><div class="heading"><div><p class="eyebrow">2026 / 2027 УЧЕБНЫЙ ГОД</p><h1>${titles[state.tab]}</h1><p class="muted">${subtitles[state.tab]}</p></div><div class="actions"><button data-action="print">Печать</button><button id="save-button" class="primary" data-action="save">Сохранить</button></div></div><div id="save-status" class="save-status" role="status"></div>${loadError?`<div class="error" role="alert">${escapeHTML(loadError)}</div>`:''}<div class="workspace">${renderContent()}</div><footer><span>Данные сохраняются на устройстве. Общую базу можно подключить кнопкой «Аккаунт и синхронизация».</span><div class="actions"><button data-action="backup">↓ Резервная копия</button><button data-action="restore">↑ Восстановить</button></div></footer></div></main></div>`;
   updateStatus();
 }
 function renderContent() {
