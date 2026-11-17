@@ -38,7 +38,7 @@ function journalViewButtons(){
 function renderJournalTableContext(){
   return `<div class="journal-table-context">${journalAutoMessage&&journalCurrentGroupIds.length?`<span>${escapeHTML(journalAutoMessage)}</span>`:''}<button type="button" data-action="current-lesson">Текущее занятие</button></div>`;
 }
-renderJournal=function(){const toolbar='<div class="journal-view-toolbar">'+journalViewButtons()+journalSortControl()+'</div>';if(state.journalMode==='single'){const l=lesson(),key=lessonKey();return toolbar+(l.deleted?renderRemovedSingleLesson(key):journalSingleView()+(data.lessons[key]?'<div class="actions journal-single-tools"><button type="button" class="danger" data-journal-delete="'+escapeHTML(key)+'">Удалить занятие</button></div>':''))+renderDeletedJournalLessons();}return toolbar+renderJournalTable()+renderDeletedJournalLessons();};
+renderJournal=function(){const toolbar='<div class="journal-view-toolbar">'+journalViewButtons()+journalSortControl()+'</div>';if(state.journalMode==='single'){const l=lesson(),key=lessonKey();return toolbar+(l.deleted?renderRemovedSingleLesson(key):journalSingleView()+(data.lessons[key]?'<div class="actions journal-single-tools"><button type="button" data-journal-lesson="'+escapeHTML(key)+'">Изменить дату занятия</button><button type="button" class="danger" data-journal-delete="'+escapeHTML(key)+'">Удалить занятие</button></div>':''))+renderDeletedJournalLessons();}return toolbar+renderJournalTable()+renderDeletedJournalLessons();};
 function renderJournalTable(){
   const columns=journalColumns(),students=journalSortedStudents(columns);
   let range='';
@@ -81,18 +81,25 @@ function openJournalLesson(key){
   journalEditingLesson={key:key||'',group:state.group,subject:state.subject};
   $('#journal-lesson-title').textContent=(l?'Занятие · ':'Новое занятие · ')+groupName(state.group);
   $('#journal-lesson-date').value=l?.date||state.date;$('#journal-lesson-pair').value=l?.pair||state.pair;
-  $('#journal-lesson-date').disabled=!!l;$('#journal-lesson-pair').disabled=!!l;
+  $('#journal-lesson-date').disabled=false;$('#journal-lesson-pair').disabled=!!l;
   $('#journal-lesson-topic').value=l?.topic||'';$('#journal-lesson-homework').value=l?.homework||'';
   $('#journal-lesson-error').hidden=true;$('#journal-lesson-delete').hidden=!l;$('#journal-lesson-dialog').showModal();
 }
 function applyJournalLesson(date,pair,topic,homework){
   const edit=journalEditingLesson;
   if(!edit||edit.group!==state.group||edit.subject!==state.subject||!isDate(date)||!Number.isInteger(pair)||pair<1||pair>TIMES.length)return false;
-  const key=edit.key||[edit.group,date,edit.subject,pair].join('|');
+  const key=[edit.group,date,edit.subject,pair].join('|');
+  const previous=edit.key?journalAllowedLesson(edit.key):undefined;
+  if(edit.key&&!previous){$('#journal-lesson-error').textContent='Занятие удалено или изменилось. Закройте окно и откройте его заново.';$('#journal-lesson-error').hidden=false;return false;}
+  if(edit.key&&key!==edit.key&&data.lessons[key]){ $('#journal-lesson-error').textContent='На эту дату уже есть такая пара'+(data.lessons[key].deleted?' в удалённых занятиях':'')+'. Выберите другую дату. Отметки не изменены.';$('#journal-lesson-error').hidden=false;return false;}
   if(!edit.key&&data.lessons[key]?.deleted){$('#journal-lesson-error').textContent='Эта пара удалена. Восстановите её в разделе «Удалённые занятия», чтобы вернуть отметки.';$('#journal-lesson-error').hidden=false;return false;}
   if(!edit.key&&data.lessons[key]){openJournalLesson(key);$('#journal-lesson-error').textContent='Это занятие уже есть. Открыта его существующая запись.';$('#journal-lesson-error').hidden=false;return false;}
-  const previous=data.lessons[key];
-  data.lessons[key]={...(previous||{group:edit.group,subject:edit.subject,date,pair,marks:{}}),topic,homework};
+  data.lessons[key]={...(previous||{group:edit.group,subject:edit.subject,marks:{}}),date,pair,topic,homework};
+  if(edit.key&&key!==edit.key){
+    delete data.lessons[edit.key];
+    if(state.date===previous.date&&state.pair===previous.pair){state.date=date;state.pair=pair;}
+  }
+  edit.key=key;
   changed();return true;
 }
 function scrollJournalToToday(){
