@@ -1,6 +1,6 @@
 'use strict';
 // Increase VERSION whenever any app file changes. Each version installs atomically.
-const VERSION = '2026-11-17-journal-table-3';
+const VERSION = '2026-11-17-journal-tools-1';
 const BASE = new URL('./', self.location.href);
 const PREFIX = 'teacher-offline-' + encodeURIComponent(BASE.pathname) + '-';
 const CACHE = PREFIX + VERSION;

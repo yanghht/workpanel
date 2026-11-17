@@ -109,7 +109,7 @@ function validData(d) {
   const pair = x => Number.isInteger(x) && x>=1 && x<=7;
   return isObject(d) && (d.settings===undefined || (isObject(d.settings) && isDate(d.settings.anchor) && new Date(d.settings.anchor+'T12:00:00Z').getUTCDay()===1)) && (d.tasks===undefined || (Array.isArray(d.tasks) && d.tasks.every(t=>isObject(t)&&isString(t.id)&&isString(t.text)&&isDate(t.date)&&typeof t.done==='boolean'))) && Array.isArray(d.groups) && d.groups.every(g => isObject(g) && isString(g.id) && isString(g.name) && (g.deleted===undefined||typeof g.deleted==='boolean') && Array.isArray(g.students) && g.students.every(s => isObject(s) && isString(s.id) && isString(s.name) && (s.deleted===undefined||typeof s.deleted==='boolean')))
     && Array.isArray(d.schedule) && d.schedule.every(s => isObject(s) && isString(s.id) && [1,2].includes(s.week) && Number.isInteger(s.day) && s.day>=0 && s.day<=5 && pair(s.pair) && subject(s.subject) && isString(s.type) && isString(s.group) && (s.groups===undefined || (Array.isArray(s.groups)&&s.groups.every(isString))) && isString(s.room))
-    && isObject(d.lessons) && Object.values(d.lessons).every(l => isObject(l) && isString(l.group) && isDate(l.date) && pair(l.pair) && subject(l.subject) && isString(l.topic) && isString(l.homework) && isObject(l.marks) && Object.values(l.marks).every(m => isObject(m) && ATTENDANCE.includes(m.attendance) && GRADES.includes(m.grade) && isString(m.note)))
+    && isObject(d.lessons) && Object.values(d.lessons).every(l => isObject(l) && (l.deleted===undefined||typeof l.deleted==='boolean') && isString(l.group) && isDate(l.date) && pair(l.pair) && subject(l.subject) && isString(l.topic) && isString(l.homework) && isObject(l.marks) && Object.values(l.marks).every(m => isObject(m) && ATTENDANCE.includes(m.attendance) && GRADES.includes(m.grade) && isString(m.note)))
     && Array.isArray(d.exams) && d.exams.every(e => isObject(e) && isString(e.id) && isString(e.group) && subject(e.subject) && isDate(e.date) && isString(e.type) && isObject(e.results) && Object.values(e.results).every(x => RESULTS.includes(x)));
 }
 
@@ -147,7 +147,7 @@ function rememberView(){
 }
 let restoreScrollOnce=true;
 let renderedViewKey=null;
-function viewContext(){return JSON.stringify([state.tab,state.group,state.subject,state.date,state.pair,state.examId,state.week,state.from,state.to,state.journalMode,state.journalPeriod,state.journalMonth,state.journalSemester,state.journalFrom,state.journalTo]);}
+function viewContext(){return JSON.stringify([state.tab,state.group,state.subject,state.date,state.pair,state.examId,state.week,state.from,state.to,state.journalMode,state.journalPeriod,state.journalMonth,state.journalSemester,state.journalFrom,state.journalTo,state.journalSort]);}
 function finishViewRender(areas){
   if(restoreScrollOnce){
     restoreScrollOnce=false;
@@ -237,6 +237,15 @@ function selectField(label, name, values, selected) {
 }
 function groupSelect() { return selectField('Группа','group',activeGroups().map(g=>[g.id,g.name]),state.group); }
 function subjectSelect() { return selectField('Предмет','subject',SUBJECTS.map((x,i)=>[i,x]),state.subject); }
+function subjectForGroup(groupId){
+  const valid=x=>Number.isInteger(x)&&x>=0&&x<SUBJECTS.length;
+  const scheduled=[...new Set(data.schedule.filter(s=>(s.groups?.length?s.groups:[s.group]).includes(groupId)&&valid(s.subject)).map(s=>s.subject))];
+  if(scheduled.length===1)return scheduled[0];
+  if(scheduled.length>1)return null;
+  const recorded=[...new Set(Object.values(data.lessons).filter(l=>!l.deleted&&l.group===groupId&&valid(l.subject)).map(l=>l.subject))];
+  return recorded.length===1?recorded[0]:null;
+}
+function selectGroupSubject(){const subject=subjectForGroup(state.group);if(subject!==null)state.subject=subject;}
 function download(name, content, type='application/json;charset=utf-8') {
   const url=URL.createObjectURL(new Blob(['\uFEFF'+content], {type}));
   const a=document.createElement('a'); a.href=url; a.download=name; a.click(); setTimeout(()=>URL.revokeObjectURL(url),1000);
@@ -303,7 +312,7 @@ function restoreStudent(id){
 }
 let journalAutoMessage='', journalCurrentGroupIds=[], lastAutoLessonKey='';
 function refreshCurrentJournal(){
-  if(state.tab!=='Журнал'||dirty||$('#slot-dialog')?.open||$('#cloud-dialog')?.open||$('#journal-cell-dialog')?.open||$('#journal-lesson-dialog')?.open||/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName))return false;
+  if(state.tab!=='Журнал'||dirty||$('#slot-dialog')?.open||$('#cloud-dialog')?.open||$('#journal-cell-dialog')?.open||$('#journal-lesson-dialog')?.open||$('#journal-delete-dialog')?.open||/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName))return false;
   const current=currentLesson(),key=[current.date,current.pair,current.slot?.id||''].join('|');
   if(key===lastAutoLessonKey)return false;
   selectCurrentLesson();return true;
@@ -339,8 +348,8 @@ function renderGroups() {
   return `<div class="filters">${groupSelect()}<label>Новая группа<input id="new-group" placeholder="Название группы"></label><button type="button" data-action="add-group">+ Создать группу</button></div><div class="actions group-tools"><button type="button" data-action="sort-groups">Отсортировать</button><button type="button" data-action="rename-group" ${g?'':'disabled'}>Изменить название</button><button type="button" data-action="delete-group" class="danger" ${g?'':'disabled'}>Удалить группу</button></div><p id="group-message" role="status" aria-live="polite"></p>${renderDeletedGroups()}<div class="two-columns"><section class="panel"><h2>Список студентов</h2><p class="muted">По одному ФИО на строку. Новые имена добавятся к текущему списку.</p><textarea id="roster" rows="9" placeholder="Иванов Иван Иванович&#10;Петрова Анна Сергеевна" aria-label="Список студентов"></textarea><button class="primary" data-action="add-students" ${g?'':'disabled'}>+ Добавить в группу</button></section><section class="panel"><h2>${escapeHTML(g?.name||'Нет групп')} <span class="count">${activeStudents(g).length}</span></h2>${activeStudents(g).length?`<ol class="roster">${activeStudents(g).map(s=>`<li><span>${escapeHTML(s.name)}</span><span class="student-actions"><button type="button" data-rename-student="${escapeHTML(s.id)}">Изменить</button><button type="button" data-remove-student="${escapeHTML(s.id)}" class="danger">Удалить</button></span></li>`).join('')}</ol>`:'<p class="muted">Список пока не добавлен.</p>'}${renderDeletedStudents(g)}</section></div>`;
 }
 function renderJournal() {
-  const g=activeGroup(), l=lesson(), students=activeStudents(g);
-  const history=Object.entries(data.lessons).filter(([,x])=>x.group===state.group&&x.subject===state.subject).sort(([,a],[,b])=>b.date.localeCompare(a.date));
+  const g=activeGroup(), l=lesson(), students=typeof journalSortedStudents==='function'?journalSortedStudents():activeStudents(g);
+  const history=Object.entries(data.lessons).filter(([,x])=>!x.deleted&&x.group===state.group&&x.subject===state.subject).sort(([,a],[,b])=>b.date.localeCompare(a.date));
   return `${renderJournalContext()}<div class="filters">${groupSelect()}${subjectSelect()}<label>Дата<input type="date" data-filter="date" value="${state.date}"></label>${selectField('Пара','pair',TIMES.map((t,i)=>[i+1,`${i+1} · ${t}`]),state.pair)}</div><div class="panel lesson-details"><label>Тема занятия<input data-lesson="topic" value="${escapeHTML(l.topic)}" placeholder="Введите тему"></label><label>Домашнее задание<input data-lesson="homework" value="${escapeHTML(l.homework)}" placeholder="Задание или комментарий"></label></div><div class="section-head"><h2>${escapeHTML(g?.name||'Выберите группу')} <span class="count">${students.length}</span></h2><div class="actions"><button data-action="all-present" ${students.length?'':'disabled'}>Все присутствуют</button><button data-action="export-csv" ${students.length?'':'disabled'}>↓ CSV для Excel</button></div></div>${students.length?`<div class="table-wrap"><table><thead><tr><th>№</th><th>Студент</th><th>Посещаемость</th><th>Оценка</th><th>Комментарий</th></tr></thead><tbody>${students.map((s,i)=>{const m=l.marks[s.id]||{};return `<tr><td>${i+1}</td><td class="student-name">${escapeHTML(s.name)}</td><td><select data-student="${escapeHTML(s.id)}" data-mark="attendance" aria-label="Посещаемость ${escapeHTML(s.name)}">${options(ATTENDANCE,m.attendance,'Не отмечено')}</select></td><td><select data-student="${escapeHTML(s.id)}" data-mark="grade" aria-label="Оценка ${escapeHTML(s.name)}">${options(GRADES,m.grade)}</select></td><td><input data-student="${escapeHTML(s.id)}" data-mark="note" value="${escapeHTML(m.note||'')}" aria-label="Комментарий ${escapeHTML(s.name)}"></td></tr>`}).join('')}</tbody></table></div>`:'<div class="empty"><h3>В группе пока нет студентов</h3><button data-tab="Группы">Добавить студентов</button></div>'}<section class="history"><h2>История занятий</h2>${history.length?history.map(([k,l])=>`<button class="history-row" data-history="${escapeHTML(k)}"><span>${l.date} · ${l.pair} пара</span><span>${escapeHTML(l.topic||'Без темы')}</span><span>→</span></button>`).join(''):'<p class="muted">Здесь появятся заполненные занятия по выбранному предмету.</p>'}</section>`;
 }
 function renderExams() {
@@ -422,12 +431,12 @@ document.addEventListener('click',e=>{
   if(b.dataset.restoreStudent){restoreStudent(b.dataset.restoreStudent);return;}
   if(b.dataset.currentGroup&&journalCurrentGroupIds.includes(b.dataset.currentGroup)){state.group=b.dataset.currentGroup;render();return;}
   if(b.dataset.renameStudent) {const s=activeGroup()?.students.find(x=>x.id===b.dataset.renameStudent);if(!s)return;const name=prompt('ФИО студента',s.name)?.trim();if(name){s.name=name;changed();render();}}
-  if(b.dataset.history) {const l=data.lessons[b.dataset.history];if(l){state.date=l.date;state.pair=l.pair;journalAutoMessage='';journalCurrentGroupIds=[];render();}}
+  if(b.dataset.history) {const l=data.lessons[b.dataset.history];if(l&&!l.deleted){state.date=l.date;state.pair=l.pair;state.journalMode='single';journalAutoMessage='';journalCurrentGroupIds=[];render();}}
 });
 document.addEventListener('keydown',e=>{if(e.key==='Enter'&&e.target.id==='new-group'){e.preventDefault();actions['add-group']();}});
 document.addEventListener('change',e=>{
   const el=e.target;
-  if(el.dataset.filter){const f=el.dataset.filter;if(['date','from','to'].includes(f)&&!isDate(el.value))return;state[f]=['subject','pair'].includes(f)?Number(el.value):el.value;if(state.tab==='Журнал'){journalAutoMessage='';journalCurrentGroupIds=[];}render();}
+  if(el.dataset.filter){const f=el.dataset.filter;if(['date','from','to'].includes(f)&&!isDate(el.value))return;state[f]=['subject','pair'].includes(f)?Number(el.value):el.value;if(f==='group'){selectGroupSubject();state.examId='';}if(state.tab==='Журнал'){journalAutoMessage='';journalCurrentGroupIds=[];}render();}
   if(el.dataset.mark&&el.tagName==='SELECT') updateMark(el);
   if(el.dataset.result){const exam=data.exams.find(x=>x.id===state.examId);if(exam){exam.results[el.dataset.result]=el.value;changed();}}
 });
@@ -442,7 +451,7 @@ $('#backup-file').addEventListener('change',async e=>{
 });
 
 function summaryRows() {
-  const lessons=Object.values(data.lessons).filter(l=>l.group===state.group&&l.subject===state.subject&&l.date>=state.from&&l.date<=state.to);
+  const lessons=Object.values(data.lessons).filter(l=>!l.deleted&&l.group===state.group&&l.subject===state.subject&&l.date>=state.from&&l.date<=state.to);
   return (activeStudents()).map(student=>{
     const marks=lessons.map(l=>l.marks[student.id]||{}), grades=marks.map(m=>Number(m.grade)).filter(n=>n>=2&&n<=5);
     const count=value=>marks.filter(m=>m.attendance===value).length;
@@ -458,6 +467,7 @@ function renderTasks() {
   return `<section class="panel"><h2>Что подготовить?</h2><div class="filters"><label class="task-text">Задача<input id="task-text" maxlength="500" placeholder="Например: распечатать самостоятельную для ИСиП-01"></label><label>Срок<input id="task-date" type="date" value="${state.date}"></label><button class="primary" data-action="add-task">+ Добавить</button></div></section><div class="section-head"><h2>Список дел <span class="count">${tasks.filter(t=>!t.done).length} осталось</span></h2></div><div class="task-list">${tasks.map(t=>`<article class="task-card ${t.done?'completed':''}"><button data-task-toggle="${escapeHTML(t.id)}" aria-label="${t.done?'Вернуть в работу':'Выполнить задачу'}" aria-pressed="${t.done}">${t.done?'✓':'○'}</button><div><p>${escapeHTML(t.text)}</p><small class="${!t.done&&t.date<today()?'absence':''}">${t.date}${!t.done&&t.date<today()?' · срок прошёл':''}</small></div><button data-task-delete="${escapeHTML(t.id)}" aria-label="Удалить задачу">×</button></article>`).join('')||'<div class="empty"><h3>Пока всё спокойно</h3><p>Добавьте первое дело к следующему занятию.</p></div>'}</div>`;
 }
 
+selectGroupSubject();
 if(state.tab==='Журнал')selectCurrentLesson();
 render();
 if(importedPhoto){dirty=true;status='Начальные данные подготовлены · нажмите «Сохранить»';updateStatus();}
