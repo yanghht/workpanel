@@ -38,7 +38,17 @@ function journalViewButtons(){
 function renderJournalTableContext(){
   return `<div class="journal-table-context">${journalAutoMessage&&journalCurrentGroupIds.length?`<span>${escapeHTML(journalAutoMessage)}</span>`:''}<button type="button" data-action="current-lesson">Текущее занятие</button></div>`;
 }
-renderJournal=function(){const toolbar='<div class="journal-view-toolbar">'+journalViewButtons()+journalSortControl()+'</div>';if(state.journalMode==='single'){const l=lesson(),key=lessonKey();return toolbar+(l.deleted?renderRemovedSingleLesson(key):journalSingleView()+(data.lessons[key]?'<div class="actions journal-single-tools"><button type="button" data-journal-lesson="'+escapeHTML(key)+'">Изменить дату занятия</button><button type="button" class="danger" data-journal-delete="'+escapeHTML(key)+'">Удалить занятие</button></div>':''))+renderDeletedJournalLessons();}return toolbar+renderJournalTable()+renderDeletedJournalLessons();};
+renderJournal=function(){const toolbar='<div class="journal-view-toolbar">'+journalViewButtons()+journalSortControl()+'</div>';if(state.journalMode==='single'){const l=lesson(),key=lessonKey();return toolbar+(l.deleted?renderRemovedSingleLesson(key):journalSingleView()+(data.lessons[key]?'<div class="actions journal-single-tools"><button type="button" class="danger" data-journal-delete="'+escapeHTML(key)+'">Удалить занятие</button></div>':''))+renderDeletedJournalLessons();}return toolbar+renderJournalTable()+renderDeletedJournalLessons();};
+function journalLessonType(l){
+  if(['Практика','Лекция'].includes(l.type))return l.type;
+  const day=(new Date(l.date+'T12:00:00Z').getUTCDay()+6)%7;
+  const slot=data.schedule.find(s=>s.week===weekOf(l.date)&&s.day===day&&s.pair===l.pair&&s.subject===l.subject&&(s.groups?.length?s.groups:[s.group]).includes(l.group));
+  return ['Практика','Лекция'].includes(slot?.type)?slot.type:/^\s*лекция(?:\s|[.:]|$)/iu.test(l.topic||'')?'Лекция':'Практика';
+}
+function renderJournalHeader(key,l){
+  const kind=journalLessonType(l),safeKey=escapeHTML(key);
+  return `<th scope="col" class="journal-date ${l.date===today()?'journal-today':''}" data-journal-date="${l.date}"><div class="journal-date-top"><button type="button" class="journal-date-open" data-journal-lesson="${safeKey}" title="${escapeHTML(l.topic||'Тема не заполнена')}" aria-label="Занятие ${l.date}, ${l.pair} пара"><strong>${l.date.slice(8,10)}.${l.date.slice(5,7)}</strong></button><label class="journal-date-picker" title="Изменить дату занятия"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M7 3v5M17 3v5M3 11h18M7 15h3M14 15h3"/></svg><input type="date" data-journal-date-change="${safeKey}" value="${l.date}" aria-label="Изменить дату занятия ${l.date}, ${l.pair} пара"></label></div><span class="journal-header-pair">${l.pair} пара</span><select class="journal-type" data-journal-type="${safeKey}" aria-label="Вид занятия ${l.date}, ${l.pair} пара" title="П — практика, Л — лекция"><option value="Практика" ${kind==='Практика'?'selected':''}>П</option><option value="Лекция" ${kind==='Лекция'?'selected':''}>Л</option></select></th>`;
+}
 function renderJournalTable(){
   const columns=journalColumns(),students=journalSortedStudents(columns);
   let range='';
@@ -46,7 +56,7 @@ function renderJournalTable(){
   if(state.journalPeriod==='semester')range=`<label>Полугодие<select data-journal-filter="journalSemester"><option value="1" ${state.journalSemester==='1'?'selected':''}>Первое · сентябрь — январь</option><option value="2" ${state.journalSemester==='2'?'selected':''}>Второе · февраль — август</option></select></label>`;
   if(state.journalPeriod==='custom')range=`<label>С даты<input type="date" data-journal-filter="journalFrom" value="${state.journalFrom}"></label><label>По дату<input type="date" data-journal-filter="journalTo" value="${state.journalTo}"></label>`;
   const invalidRange=state.journalPeriod==='custom'&&state.journalFrom>state.journalTo;
-  const headers=columns.map(([key,l])=>`<th scope="col" class="journal-date ${l.date===today()?'journal-today':''}" data-journal-date="${l.date}"><button type="button" data-journal-lesson="${escapeHTML(key)}" title="${escapeHTML(l.date+' · '+l.pair+' пара · '+(l.topic||'Тема не заполнена'))}" aria-label="Занятие ${l.date}, ${l.pair} пара"><strong>${l.date.slice(8,10)}.${l.date.slice(5,7)}</strong><span>${l.pair} пара</span><small>${l.date.slice(0,4)}</small></button></th>`).join('');
+  const headers=columns.map(([key,l])=>renderJournalHeader(key,l)).join('');
   const rows=students.map((s,i)=>{
     const totals=journalStudentTotals(s,columns);
     const cells=columns.map(([key,l])=>{
@@ -94,7 +104,7 @@ function applyJournalLesson(date,pair,topic,homework){
   if(edit.key&&key!==edit.key&&data.lessons[key]){ $('#journal-lesson-error').textContent='На эту дату уже есть такая пара'+(data.lessons[key].deleted?' в удалённых занятиях':'')+'. Выберите другую дату. Отметки не изменены.';$('#journal-lesson-error').hidden=false;return false;}
   if(!edit.key&&data.lessons[key]?.deleted){$('#journal-lesson-error').textContent='Эта пара удалена. Восстановите её в разделе «Удалённые занятия», чтобы вернуть отметки.';$('#journal-lesson-error').hidden=false;return false;}
   if(!edit.key&&data.lessons[key]){openJournalLesson(key);$('#journal-lesson-error').textContent='Это занятие уже есть. Открыта его существующая запись.';$('#journal-lesson-error').hidden=false;return false;}
-  data.lessons[key]={...(previous||{group:edit.group,subject:edit.subject,marks:{}}),date,pair,topic,homework};
+  data.lessons[key]={...(previous||{group:edit.group,subject:edit.subject,marks:{}}),type:journalLessonType(previous||{group:edit.group,subject:edit.subject,date,pair,topic}),date,pair,topic,homework};
   if(edit.key&&key!==edit.key){
     delete data.lessons[edit.key];
     if(state.date===previous.date&&state.pair===previous.pair){state.date=date;state.pair=pair;}
@@ -196,4 +206,28 @@ document.addEventListener('click',e=>{
   if(b.dataset.journalRestore&&restoreJournalLesson(b.dataset.journalRestore))render();
 });
 $('#journal-delete-form').addEventListener('submit',e=>{e.preventDefault();if(deleteJournalLesson(journalDeletingKey)){$('#journal-delete-dialog').close();render();}});
+function moveJournalLessonDate(key,date){
+  const l=journalAllowedLesson(key);
+  if(!l||!isDate(date))return {ok:false,message:'Не удалось изменить дату. Откройте журнал заново.'};
+  const newKey=[l.group,date,l.subject,l.pair].join('|');
+  if(newKey===key)return {ok:true,key};
+  if(data.lessons[newKey])return {ok:false,message:'На эту дату уже есть такая пара'+(data.lessons[newKey].deleted?' в удалённых занятиях':'')+'. Выберите другую дату. Отметки не изменены.'};
+  data.lessons[newKey]={...l,date,type:journalLessonType(l)};
+  delete data.lessons[key];
+  if(journalEditingLesson?.key===key)journalEditingLesson.key=newKey;
+  if(state.date===l.date&&state.pair===l.pair)state.date=date;
+  changed();return {ok:true,key:newKey};
+}
+function setJournalLessonType(key,type){
+  const l=journalAllowedLesson(key);if(!l||!['Практика','Лекция'].includes(type)||l.type===type)return false;
+  l.type=type;changed();return true;
+}
+document.addEventListener('change',e=>{
+  const el=e.target;
+  if(el.dataset.journalDateChange){
+    const result=moveJournalLessonDate(el.dataset.journalDateChange,el.value);
+    render();$('#journal-table-message').textContent=result.ok?'Дата занятия изменена. Нажмите «Сохранить».':result.message;
+  }
+  if(el.dataset.journalType&&setJournalLessonType(el.dataset.journalType,el.value))render();
+});
 render();
