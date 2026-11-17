@@ -147,7 +147,7 @@ function rememberView(){
 }
 let restoreScrollOnce=true;
 let renderedViewKey=null;
-function viewContext(){return JSON.stringify([state.tab,state.group,state.subject,state.date,state.pair,state.examId,state.week,state.from,state.to]);}
+function viewContext(){return JSON.stringify([state.tab,state.group,state.subject,state.date,state.pair,state.examId,state.week,state.from,state.to,state.journalMode,state.journalPeriod,state.journalMonth,state.journalSemester,state.journalFrom,state.journalTo]);}
 function finishViewRender(areas){
   if(restoreScrollOnce){
     restoreScrollOnce=false;
@@ -303,7 +303,7 @@ function restoreStudent(id){
 }
 let journalAutoMessage='', journalCurrentGroupIds=[], lastAutoLessonKey='';
 function refreshCurrentJournal(){
-  if(state.tab!=='Журнал'||dirty||$('#slot-dialog')?.open||$('#cloud-dialog')?.open||/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName))return false;
+  if(state.tab!=='Журнал'||dirty||$('#slot-dialog')?.open||$('#cloud-dialog')?.open||$('#journal-cell-dialog')?.open||$('#journal-lesson-dialog')?.open||/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName))return false;
   const current=currentLesson(),key=[current.date,current.pair,current.slot?.id||''].join('|');
   if(key===lastAutoLessonKey)return false;
   selectCurrentLesson();return true;
@@ -353,7 +353,7 @@ function openSlot(slot, requestedGroup) {
   const group=groups.includes(requestedGroup)?requestedGroup:groups[0];
   const dt=new Date(state.date+'T12:00:00Z'), day=(dt.getUTCDay()+6)%7;
   dt.setUTCDate(dt.getUTCDate()-day+slot.day+(weekOf(state.date)===slot.week?0:7));
-  Object.assign(state,{date:dt.toISOString().slice(0,10),group,subject:slot.subject,pair:slot.pair,tab:'Журнал'});journalAutoMessage='';journalCurrentGroupIds=[]; render();
+  Object.assign(state,{date:dt.toISOString().slice(0,10),group,subject:slot.subject,pair:slot.pair,tab:'Журнал',journalMode:'single'});journalAutoMessage='';journalCurrentGroupIds=[]; render();
 }
 function showSlot(slot) {
   editSlot={...slot};
