@@ -107,13 +107,13 @@ const isDate = x => isString(x) && /^\d{4}-\d{2}-\d{2}$/.test(x) && Number.isFin
 function validData(d) {
   const subject = x => Number.isInteger(x) && x>=0 && x<4;
   const pair = x => Number.isInteger(x) && x>=1 && x<=7;
-  return isObject(d) && (d.settings===undefined || (isObject(d.settings) && isDate(d.settings.anchor) && new Date(d.settings.anchor+'T12:00:00Z').getUTCDay()===1)) && (d.tasks===undefined || (Array.isArray(d.tasks) && d.tasks.every(t=>isObject(t)&&isString(t.id)&&isString(t.text)&&isDate(t.date)&&typeof t.done==='boolean'))) && Array.isArray(d.groups) && d.groups.every(g => isObject(g) && isString(g.id) && isString(g.name) && (g.deleted===undefined||typeof g.deleted==='boolean') && Array.isArray(g.students) && g.students.every(s => isObject(s) && isString(s.id) && isString(s.name)))
+  return isObject(d) && (d.settings===undefined || (isObject(d.settings) && isDate(d.settings.anchor) && new Date(d.settings.anchor+'T12:00:00Z').getUTCDay()===1)) && (d.tasks===undefined || (Array.isArray(d.tasks) && d.tasks.every(t=>isObject(t)&&isString(t.id)&&isString(t.text)&&isDate(t.date)&&typeof t.done==='boolean'))) && Array.isArray(d.groups) && d.groups.every(g => isObject(g) && isString(g.id) && isString(g.name) && (g.deleted===undefined||typeof g.deleted==='boolean') && Array.isArray(g.students) && g.students.every(s => isObject(s) && isString(s.id) && isString(s.name) && (s.deleted===undefined||typeof s.deleted==='boolean')))
     && Array.isArray(d.schedule) && d.schedule.every(s => isObject(s) && isString(s.id) && [1,2].includes(s.week) && Number.isInteger(s.day) && s.day>=0 && s.day<=5 && pair(s.pair) && subject(s.subject) && isString(s.type) && isString(s.group) && (s.groups===undefined || (Array.isArray(s.groups)&&s.groups.every(isString))) && isString(s.room))
     && isObject(d.lessons) && Object.values(d.lessons).every(l => isObject(l) && isString(l.group) && isDate(l.date) && pair(l.pair) && subject(l.subject) && isString(l.topic) && isString(l.homework) && isObject(l.marks) && Object.values(l.marks).every(m => isObject(m) && ATTENDANCE.includes(m.attendance) && GRADES.includes(m.grade) && isString(m.note)))
     && Array.isArray(d.exams) && d.exams.every(e => isObject(e) && isString(e.id) && isString(e.group) && subject(e.subject) && isDate(e.date) && isString(e.type) && isObject(e.results) && Object.values(e.results).every(x => RESULTS.includes(x)));
 }
 
-let data = seed(), dirty = false, status = 'Автосохранение включено · хранение в этом браузере', loadError = '';
+let data = seed(), dirty = false, status = 'Данные хранятся на устройстве · сохраняйте изменения кнопкой «Сохранить»', loadError = '';
 try {
   const stored = localStorage.getItem(STORAGE_KEY);
   if (stored) {
@@ -172,7 +172,11 @@ let viewScrollTimer;
 document.addEventListener('scroll',()=>{clearTimeout(viewScrollTimer);viewScrollTimer=setTimeout(rememberView,150);},true);
 
 let editSlot = null;
-function activeGroups() { return data.groups.filter(g=>!g.deleted); }
+const groupOrder=new Intl.Collator('ru',{numeric:true,sensitivity:'base'});
+function compareGroups(a,b){return groupOrder.compare(a.name,b.name)||groupOrder.compare(a.id,b.id);}
+function sortGroups(){data.groups.sort(compareGroups);}
+function activeGroups() { return data.groups.filter(g=>!g.deleted).sort(compareGroups); }
+function activeStudents(group=activeGroup()){return (group?.students||[]).filter(s=>!s.deleted);}
 function activeGroup() { return activeGroups().find(g => g.id===state.group); }
 function lessonKey() { return `${state.group}|${state.date}|${state.subject}|${state.pair}`; }
 function lesson(create=false) {
@@ -183,9 +187,11 @@ function lesson(create=false) {
 }
 function changed() {
   dirty=true;
-  save(true);
+  status='Есть несохранённые изменения · нажмите «Сохранить»';
+  updateStatus();
+  globalThis.JournalCloud?.changed();
 }
-function updateStatus() { $('#save-status').textContent=status; }
+function updateStatus() { $('#save-status').textContent=status; const b=$('#save-button');if(b)b.disabled=!dirty&&lastStored!==null; }
 function save(automatic=false) {
   try {
     const current = localStorage.getItem(STORAGE_KEY);
@@ -199,7 +205,7 @@ function save(automatic=false) {
     }
     if (loadError) {
       if (automatic) {
-        status='Автосохранение остановлено: прежние данные не удалось прочитать. Скачайте копию, затем восстановите журнал из исправной резервной копии.';
+        status='Сохранение остановлено: прежние данные не удалось прочитать. Скачайте копию или восстановите исправную резервную копию перед сохранением.';
         updateStatus();
         return false;
       }
@@ -208,7 +214,7 @@ function save(automatic=false) {
     const serialized = JSON.stringify(data);
     localStorage.setItem(STORAGE_KEY, serialized); lastStored=serialized;
     dirty=false; loadError='';
-    status='Автоматически сохранено · '+new Date().toLocaleTimeString('ru-RU');
+    status='Сохранено на устройстве · '+new Date().toLocaleTimeString('ru-RU');
     updateStatus();
     globalThis.JournalCloud?.changed();
     return true;
@@ -222,8 +228,6 @@ function save(automatic=false) {
 let lastStored=null;
 try { lastStored=localStorage.getItem(STORAGE_KEY); } catch {}
 window.addEventListener('beforeunload', e => { if(dirty) { e.preventDefault(); e.returnValue=''; } });
-window.addEventListener('pagehide', () => { if(dirty) save(true); });
-document.addEventListener('visibilitychange', () => { if(document.visibilityState==='hidden' && dirty) save(true); });
 window.addEventListener('storage', e => {
   if(e.key===STORAGE_KEY) { status='Журнал изменён в другой вкладке. Сделайте копию перед обновлением страницы.'; updateStatus(); }
 });
@@ -242,8 +246,8 @@ function slotGroupNames(slot) { return slotGroups(slot).map(groupName).join(', '
 function slotGroupLinks(slot) { return slotGroups(slot).map(id=>`<button class="group-journal" data-open="${escapeHTML(slot.id)}" data-open-group="${escapeHTML(id)}">${escapeHTML(groupName(id))} →</button>`).join(''); }
 let scheduleDay=today();
 function syncScheduleDay() { if(scheduleDay!==today()){scheduleDay=today();state.week=weekOf(scheduleDay);return true;}return false; }
-window.addEventListener('focus',()=>{if(syncScheduleDay())render();});
-document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&syncScheduleDay())render();});
+window.addEventListener('focus',()=>{const dayChanged=syncScheduleDay(),lessonChanged=refreshCurrentJournal();if(dayChanged||lessonChanged)render();});
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'){const dayChanged=syncScheduleDay(),lessonChanged=refreshCurrentJournal();if(dayChanged||lessonChanged)render();}});
 if(typeof setInterval==='function')setInterval(()=>{if(syncScheduleDay())render();},60000);
 function groupName(id) { return data.groups.find(g=>g.id===id)?.name || 'Группа не назначена'; }
 function render() {
@@ -253,7 +257,7 @@ function render() {
   const keptAreas=renderedViewKey===viewContext()&&typeof document.querySelectorAll==='function'?[...document.querySelectorAll('.schedule-scroll,.table-wrap')].map(el=>({x:el.scrollLeft||0,y:el.scrollTop||0})):null;
   const titles={'Сегодня':'Ваш учебный день','Расписание':'Расписание занятий','Журнал':'Электронный журнал','Группы':'Учебные группы','Аттестация':'Зачёты и экзамены','Сводка':'Успеваемость и посещаемость','Дела':'Подготовка к занятиям'};
   const subtitles={'Сегодня':'Пары, студенты и важные дела — в одном месте.','Расписание':'Две недели из вашего расписания. Нажмите на пару для перехода в журнал.','Журнал':'Посещаемость, оценки и содержание каждого занятия.','Группы':'Добавляйте студентов списком, по одному ФИО на строку.','Аттестация':'Отдельные ведомости и результаты студентов.','Сводка':'Оценки и пропуски по группе, предмету и периоду.','Дела':'Темы, материалы и небольшие задачи к следующей паре.'};
-  $('#app').innerHTML=`<div class="shell"><aside><div class="brand"><span>▤</span><div>Мой журнал<small>Кабинет преподавателя</small></div></div><nav>${['Сегодня','Расписание','Журнал','Группы','Аттестация','Сводка','Дела'].map((t,i)=>`<button data-tab="${t}" class="${state.tab===t?'selected':''}"><span aria-hidden="true">${['◷','▦','▤','♙','✓','▥','☑'][i]}</span>${t}</button>`).join('')}</nav><div class="sidebar-bottom"><span class="avatar">ЯГ</span><div>Гаркушин Я.В.<small>Локальная версия</small></div></div></aside><main><header><div class="crumb">Кабинет преподавателя <span>/ ${state.tab}</span></div><span>Хранение в этом браузере</span></header><div class="page"><div class="heading"><div><p class="eyebrow">2026 / 2027 УЧЕБНЫЙ ГОД</p><h1>${titles[state.tab]}</h1><p class="muted">${subtitles[state.tab]}</p></div><div class="actions"><button data-action="print">Печать</button></div></div><div id="save-status" class="save-status" role="status"></div>${loadError?`<div class="error" role="alert">${escapeHTML(loadError)}</div>`:''}<div class="workspace">${renderContent()}</div><footer><span>Данные сохраняются на устройстве. Общую базу можно подключить кнопкой «Аккаунт и синхронизация».</span><div class="actions"><button data-action="backup">↓ Резервная копия</button><button data-action="restore">↑ Восстановить</button></div></footer></div></main></div>`;
+  $('#app').innerHTML=`<div class="shell"><aside><div class="brand"><span>▤</span><div>Мой журнал<small>Кабинет преподавателя</small></div></div><nav>${['Сегодня','Расписание','Журнал','Группы','Аттестация','Сводка','Дела'].map((t,i)=>`<button data-tab="${t}" class="${state.tab===t?'selected':''}"><span aria-hidden="true">${['◷','▦','▤','♙','✓','▥','☑'][i]}</span>${t}</button>`).join('')}</nav><div class="sidebar-bottom"><span class="avatar">ЯГ</span><div>Гаркушин Я.В.<small>Локальная версия</small></div></div></aside><main><header><div class="crumb">Кабинет преподавателя <span>/ ${state.tab}</span></div><span>Хранение в этом браузере</span></header><div class="page"><div class="heading"><div><p class="eyebrow">2026 / 2027 УЧЕБНЫЙ ГОД</p><h1>${titles[state.tab]}</h1><p class="muted">${subtitles[state.tab]}</p></div><div class="actions"><button id="save-button" class="primary" data-action="save">Сохранить</button><button data-action="print">Печать</button></div></div><div id="save-status" class="save-status" role="status"></div>${loadError?`<div class="error" role="alert">${escapeHTML(loadError)}</div>`:''}<div class="workspace">${renderContent()}</div><footer><span>Изменения записываются на устройство кнопкой «Сохранить». Общую базу можно подключить кнопкой «Аккаунт и синхронизация».</span><div class="actions"><button data-action="backup">↓ Резервная копия</button><button data-action="restore">↑ Восстановить</button></div></footer></div></main></div>`;
   updateStatus();
   finishViewRender(keptAreas);
 }
@@ -269,7 +273,7 @@ function renderContent() {
 function renderToday() {
   const day=(new Date(state.date+'T12:00:00Z').getUTCDay()+6)%7;
   const slots=data.schedule.filter(s=>s.week===weekOf(state.date)&&s.day===day).sort((a,b)=>a.pair-b.pair);
-  return `<div class="stats"><div><small>Пары на выбранный день</small><strong>${slots.length}<span>пар</span></strong></div><div><small>Ваши группы</small><strong>${activeGroups().length}<span>групп</span></strong></div><div><small>Студенты в журнале</small><strong>${activeGroups().reduce((n,g)=>n+g.students.length,0)}<span>человек</span></strong></div></div><div class="section-head"><div><h2>Расписание на день</h2><p class="muted">${new Date(state.date+'T12:00:00Z').toLocaleDateString('ru-RU',{weekday:'long',day:'numeric',month:'long'})} · ${weekOf(state.date)} неделя</p></div><input aria-label="Дата" type="date" data-filter="date" value="${state.date}"></div><div class="today-layout"><section class="lesson-list">${slots.length?slots.map(s=>`<article class="lesson-card"><div class="time"><b>${TIMES[s.pair-1].split('–')[0]}</b><span>${TIMES[s.pair-1].split('–')[1]}</span><small>${s.pair} пара</small></div><div class="lesson-info"><span class="tag color${s.subject}">${escapeHTML(s.type)}</span><h3>${SUBJECTS[s.subject]}</h3><p>${escapeHTML(slotGroupNames(s))}${s.room?' · ауд. '+escapeHTML(s.room):''}</p></div>${s.sourceNote?`<small class="source-warning">⚠ ${escapeHTML(s.sourceNote)}</small>`:''}<div class="group-links">${slotGroupLinks(s)}${slotGroups(s).length?'':`<button data-edit-slot="${escapeHTML(s.id)}">Назначить группы</button>`}</div></article>`).join(''):'<div class="empty"><h3>На этот день пар нет</h3><p>Можно заполнить журнал или подготовить ведомости.</p></div>'}</section><section class="panel"><p class="eyebrow">БЫСТРЫЙ СТАРТ</p><h2>Всё готово к занятиям</h2><p class="muted">Добавьте студентов и назначьте группы парам.</p><button class="wide" data-tab="Группы">Добавить студентов →</button><button class="wide" data-tab="Расписание">Настроить пары →</button><div class="note">Текущая неделя определяется автоматически по сегодняшней дате.</div></section></div>`;
+  return `<div class="stats"><div><small>Пары на выбранный день</small><strong>${slots.length}<span>пар</span></strong></div><div><small>Ваши группы</small><strong>${activeGroups().length}<span>групп</span></strong></div><div><small>Студенты в журнале</small><strong>${activeGroups().reduce((n,g)=>n+activeStudents(g).length,0)}<span>человек</span></strong></div></div><div class="section-head"><div><h2>Расписание на день</h2><p class="muted">${new Date(state.date+'T12:00:00Z').toLocaleDateString('ru-RU',{weekday:'long',day:'numeric',month:'long'})} · ${weekOf(state.date)} неделя</p></div><input aria-label="Дата" type="date" data-filter="date" value="${state.date}"></div><div class="today-layout"><section class="lesson-list">${slots.length?slots.map(s=>`<article class="lesson-card"><div class="time"><b>${TIMES[s.pair-1].split('–')[0]}</b><span>${TIMES[s.pair-1].split('–')[1]}</span><small>${s.pair} пара</small></div><div class="lesson-info"><span class="tag color${s.subject}">${escapeHTML(s.type)}</span><h3>${SUBJECTS[s.subject]}</h3><p>${escapeHTML(slotGroupNames(s))}${s.room?' · ауд. '+escapeHTML(s.room):''}</p></div>${s.sourceNote?`<small class="source-warning">⚠ ${escapeHTML(s.sourceNote)}</small>`:''}<div class="group-links">${slotGroupLinks(s)}${slotGroups(s).length?'':`<button data-edit-slot="${escapeHTML(s.id)}">Назначить группы</button>`}</div></article>`).join(''):'<div class="empty"><h3>На этот день пар нет</h3><p>Можно заполнить журнал или подготовить ведомости.</p></div>'}</section><section class="panel"><p class="eyebrow">БЫСТРЫЙ СТАРТ</p><h2>Всё готово к занятиям</h2><p class="muted">Добавьте студентов и назначьте группы парам.</p><button class="wide" data-tab="Группы">Добавить студентов →</button><button class="wide" data-tab="Расписание">Настроить пары →</button><div class="note">Текущая неделя определяется автоматически по сегодняшней дате.</div></section></div>`;
 }
 function renderSchedule() {
   return `<div class="toolbar"><div class="segmented">${[1,2].map(w=>`<button data-week="${w}" class="${state.week===w?'active':''}">${w} неделя</button>`).join('')}</div><button data-new-slot="0,1">+ Добавить пару</button></div><div class="schedule-scroll"><div class="schedule-grid"><div class="day-title">Пара / время</div>${DAYS.map(d=>`<div class="day-title">${d}</div>`).join('')}${TIMES.map((time,p)=>`<div class="schedule-row"><div class="period"><b>${p+1} пара</b><small>${time}</small></div>${DAYS.map((_,day)=>{const s=data.schedule.find(x=>x.week===state.week&&x.day===day&&x.pair===p+1);return `<div class="slot">${s?`<div class="slot-card color${s.subject}"><button class="slot-main" data-open="${escapeHTML(s.id)}"><small>${escapeHTML(s.type)}</small><b>${SUBJECTS[s.subject]}</b><span>${escapeHTML(slotGroupNames(s))}</span>${s.room?`<span>ауд. ${escapeHTML(s.room)}</span>`:''}${s.sourceNote?`<small class="source-warning">⚠ ${escapeHTML(s.sourceNote)}</small>`:''}</button><div class="group-links">${slotGroupLinks(s)}</div><button class="edit-slot" aria-label="Изменить пару" data-edit-slot="${escapeHTML(s.id)}">⚙</button></div>`:`<button class="add-slot" aria-label="Добавить ${p+1} пару: ${DAYS[day]}" data-new-slot="${day},${p+1}">+</button>`}</div>`}).join('')}</div>`).join('')}</div></div><p class="muted">${data.schedule.filter(s=>s.week===state.week).length} пар · ${data.schedule.filter(s=>s.week===state.week).length*2} академических часов. Нажмите ⚙, чтобы назначить группу и аудиторию.</p>`;
@@ -281,20 +285,67 @@ function renderDeletedGroups(){
 function restoreGroup(id){
   const g=data.groups.find(g=>g.id===id&&g.deleted);if(!g)return;
   if(activeGroups().some(x=>x.name.toLocaleLowerCase('ru-RU')===g.name.toLocaleLowerCase('ru-RU'))){alert('Сначала переименуйте действующую группу с таким же названием.');return;}
-  g.deleted=false;state.group=g.id;changed();render();$('#group-message').textContent='Группа восстановлена.';
+  g.deleted=false;sortGroups();state.group=g.id;changed();render();$('#group-message').textContent='Группа восстановлена.';
 }
+
+function renderDeletedStudents(group){
+  const removed=(group?.students||[]).filter(s=>s.deleted);
+  return removed.length?`<details class="removed-students"><summary>Удалённые студенты · ${removed.length}</summary><p class="muted">Оценки и посещаемость сохранены. Для возврата нажмите «Восстановить».</p>${removed.map(s=>`<div class="deleted-group"><span>${escapeHTML(s.name)}</span><button type="button" data-restore-student="${escapeHTML(s.id)}">Восстановить</button></div>`).join('')}</details>`:'';
+}
+function removeStudent(id){
+  const student=activeGroup()?.students.find(s=>s.id===id&&!s.deleted);if(!student)return;
+  if(!confirm('Убрать студента «'+student.name+'» из группы? История оценок и посещаемости сохранится. Студента можно восстановить.'))return;
+  student.deleted=true;changed();render();
+}
+function restoreStudent(id){
+  const student=activeGroup()?.students.find(s=>s.id===id&&s.deleted);if(!student)return;
+  student.deleted=false;changed();render();
+}
+let journalAutoMessage='', journalCurrentGroupIds=[], lastAutoLessonKey='';
+function refreshCurrentJournal(){
+  if(state.tab!=='Журнал'||dirty||$('#slot-dialog')?.open||$('#cloud-dialog')?.open||/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName))return false;
+  const current=currentLesson(),key=[current.date,current.pair,current.slot?.id||''].join('|');
+  if(key===lastAutoLessonKey)return false;
+  selectCurrentLesson();return true;
+}
+function currentLesson(now=new Date()){
+  const parts=Object.fromEntries(new Intl.DateTimeFormat('sv-SE',{timeZone:'Europe/Moscow',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).formatToParts(now).filter(p=>p.type!=='literal').map(p=>[p.type,p.value]));
+  const date=parts.year+'-'+parts.month+'-'+parts.day,minutes=Number(parts.hour)*60+Number(parts.minute);
+  const day=(new Date(date+'T12:00:00Z').getUTCDay()+6)%7;
+  const pair=TIMES.findIndex(range=>{const [start,end]=range.split('–').map(t=>{const [h,m]=t.split(':').map(Number);return h*60+m;});return minutes>=start&&minutes<end;})+1;
+  const slot=pair?data.schedule.find(s=>s.week===weekOf(date)&&s.day===day&&s.pair===pair):null;
+  return {date,pair,slot};
+}
+function selectCurrentLesson(now=new Date()){
+  const current=currentLesson(now);state.date=current.date;state.week=weekOf(current.date);
+  lastAutoLessonKey=[current.date,current.pair,current.slot?.id||''].join('|');
+  journalCurrentGroupIds=current.slot?slotGroups(current.slot):[];
+  if(current.slot&&journalCurrentGroupIds.length){
+    state.group=journalCurrentGroupIds.includes(state.group)?state.group:journalCurrentGroupIds[0];
+    state.subject=current.slot.subject;state.pair=current.pair;
+    journalAutoMessage='Сейчас по расписанию: '+current.pair+' пара · '+current.slot.type+' · '+SUBJECTS[current.slot.subject]+(current.slot.room?' · ауд. '+current.slot.room:'');
+  }else{
+    if(current.pair)state.pair=current.pair;
+    journalAutoMessage=current.slot?'У текущей пары не назначена действующая группа. Назначьте её в расписании или выберите группу вручную.':'Сейчас по расписанию занятия нет или идёт перемена. Выбрана сегодняшняя дата; группу и предмет можно выбрать вручную.';
+  }
+}
+function renderJournalContext(){
+  if(!journalAutoMessage)return '<button type="button" data-action="current-lesson">Текущее занятие</button>';
+  return `<div class="journal-current" role="status"><p>${escapeHTML(journalAutoMessage)}</p><div class="actions">${journalCurrentGroupIds.length>1?journalCurrentGroupIds.map(id=>`<button type="button" data-current-group="${escapeHTML(id)}" class="${state.group===id?'primary':''}">${escapeHTML(groupName(id))}</button>`).join(''):''}<button type="button" data-action="current-lesson">Текущее занятие</button></div></div>`;
+}
+
 function renderGroups() {
   const g=activeGroup();
-  return `<div class="filters">${groupSelect()}<label>Новая группа<input id="new-group" placeholder="Название группы"></label><button type="button" data-action="add-group">+ Создать группу</button></div><div class="actions group-tools"><button type="button" data-action="rename-group" ${g?'':'disabled'}>Изменить название</button><button type="button" data-action="delete-group" class="danger" ${g?'':'disabled'}>Удалить группу</button></div><p id="group-message" role="status" aria-live="polite"></p>${renderDeletedGroups()}<div class="two-columns"><section class="panel"><h2>Список студентов</h2><p class="muted">По одному ФИО на строку. Новые имена добавятся к текущему списку.</p><textarea id="roster" rows="9" placeholder="Иванов Иван Иванович&#10;Петрова Анна Сергеевна" aria-label="Список студентов"></textarea><button class="primary" data-action="add-students" ${g?'':'disabled'}>+ Добавить в группу</button></section><section class="panel"><h2>${escapeHTML(g?.name||'Нет групп')} <span class="count">${g?.students.length||0}</span></h2>${g?.students.length?`<ol class="roster">${g.students.map(s=>`<li><span>${escapeHTML(s.name)}</span><button data-rename-student="${escapeHTML(s.id)}">Изменить</button></li>`).join('')}</ol>`:'<p class="muted">Список пока не добавлен.</p>'}</section></div>`;
+  return `<div class="filters">${groupSelect()}<label>Новая группа<input id="new-group" placeholder="Название группы"></label><button type="button" data-action="add-group">+ Создать группу</button></div><div class="actions group-tools"><button type="button" data-action="sort-groups">Отсортировать</button><button type="button" data-action="rename-group" ${g?'':'disabled'}>Изменить название</button><button type="button" data-action="delete-group" class="danger" ${g?'':'disabled'}>Удалить группу</button></div><p id="group-message" role="status" aria-live="polite"></p>${renderDeletedGroups()}<div class="two-columns"><section class="panel"><h2>Список студентов</h2><p class="muted">По одному ФИО на строку. Новые имена добавятся к текущему списку.</p><textarea id="roster" rows="9" placeholder="Иванов Иван Иванович&#10;Петрова Анна Сергеевна" aria-label="Список студентов"></textarea><button class="primary" data-action="add-students" ${g?'':'disabled'}>+ Добавить в группу</button></section><section class="panel"><h2>${escapeHTML(g?.name||'Нет групп')} <span class="count">${activeStudents(g).length}</span></h2>${activeStudents(g).length?`<ol class="roster">${activeStudents(g).map(s=>`<li><span>${escapeHTML(s.name)}</span><span class="student-actions"><button type="button" data-rename-student="${escapeHTML(s.id)}">Изменить</button><button type="button" data-remove-student="${escapeHTML(s.id)}" class="danger">Удалить</button></span></li>`).join('')}</ol>`:'<p class="muted">Список пока не добавлен.</p>'}${renderDeletedStudents(g)}</section></div>`;
 }
 function renderJournal() {
-  const g=activeGroup(), l=lesson(), students=g?.students||[];
+  const g=activeGroup(), l=lesson(), students=activeStudents(g);
   const history=Object.entries(data.lessons).filter(([,x])=>x.group===state.group&&x.subject===state.subject).sort(([,a],[,b])=>b.date.localeCompare(a.date));
-  return `<div class="filters">${groupSelect()}${subjectSelect()}<label>Дата<input type="date" data-filter="date" value="${state.date}"></label>${selectField('Пара','pair',TIMES.map((t,i)=>[i+1,`${i+1} · ${t}`]),state.pair)}</div><div class="panel lesson-details"><label>Тема занятия<input data-lesson="topic" value="${escapeHTML(l.topic)}" placeholder="Введите тему"></label><label>Домашнее задание<input data-lesson="homework" value="${escapeHTML(l.homework)}" placeholder="Задание или комментарий"></label></div><div class="section-head"><h2>${escapeHTML(g?.name||'Выберите группу')} <span class="count">${students.length}</span></h2><div class="actions"><button data-action="all-present" ${students.length?'':'disabled'}>Все присутствуют</button><button data-action="export-csv" ${students.length?'':'disabled'}>↓ CSV для Excel</button></div></div>${students.length?`<div class="table-wrap"><table><thead><tr><th>№</th><th>Студент</th><th>Посещаемость</th><th>Оценка</th><th>Комментарий</th></tr></thead><tbody>${students.map((s,i)=>{const m=l.marks[s.id]||{};return `<tr><td>${i+1}</td><td class="student-name">${escapeHTML(s.name)}</td><td><select data-student="${escapeHTML(s.id)}" data-mark="attendance" aria-label="Посещаемость ${escapeHTML(s.name)}">${options(ATTENDANCE,m.attendance,'Не отмечено')}</select></td><td><select data-student="${escapeHTML(s.id)}" data-mark="grade" aria-label="Оценка ${escapeHTML(s.name)}">${options(GRADES,m.grade)}</select></td><td><input data-student="${escapeHTML(s.id)}" data-mark="note" value="${escapeHTML(m.note||'')}" aria-label="Комментарий ${escapeHTML(s.name)}"></td></tr>`}).join('')}</tbody></table></div>`:'<div class="empty"><h3>В группе пока нет студентов</h3><button data-tab="Группы">Добавить студентов</button></div>'}<section class="history"><h2>История занятий</h2>${history.length?history.map(([k,l])=>`<button class="history-row" data-history="${escapeHTML(k)}"><span>${l.date} · ${l.pair} пара</span><span>${escapeHTML(l.topic||'Без темы')}</span><span>→</span></button>`).join(''):'<p class="muted">Здесь появятся заполненные занятия по выбранному предмету.</p>'}</section>`;
+  return `${renderJournalContext()}<div class="filters">${groupSelect()}${subjectSelect()}<label>Дата<input type="date" data-filter="date" value="${state.date}"></label>${selectField('Пара','pair',TIMES.map((t,i)=>[i+1,`${i+1} · ${t}`]),state.pair)}</div><div class="panel lesson-details"><label>Тема занятия<input data-lesson="topic" value="${escapeHTML(l.topic)}" placeholder="Введите тему"></label><label>Домашнее задание<input data-lesson="homework" value="${escapeHTML(l.homework)}" placeholder="Задание или комментарий"></label></div><div class="section-head"><h2>${escapeHTML(g?.name||'Выберите группу')} <span class="count">${students.length}</span></h2><div class="actions"><button data-action="all-present" ${students.length?'':'disabled'}>Все присутствуют</button><button data-action="export-csv" ${students.length?'':'disabled'}>↓ CSV для Excel</button></div></div>${students.length?`<div class="table-wrap"><table><thead><tr><th>№</th><th>Студент</th><th>Посещаемость</th><th>Оценка</th><th>Комментарий</th></tr></thead><tbody>${students.map((s,i)=>{const m=l.marks[s.id]||{};return `<tr><td>${i+1}</td><td class="student-name">${escapeHTML(s.name)}</td><td><select data-student="${escapeHTML(s.id)}" data-mark="attendance" aria-label="Посещаемость ${escapeHTML(s.name)}">${options(ATTENDANCE,m.attendance,'Не отмечено')}</select></td><td><select data-student="${escapeHTML(s.id)}" data-mark="grade" aria-label="Оценка ${escapeHTML(s.name)}">${options(GRADES,m.grade)}</select></td><td><input data-student="${escapeHTML(s.id)}" data-mark="note" value="${escapeHTML(m.note||'')}" aria-label="Комментарий ${escapeHTML(s.name)}"></td></tr>`}).join('')}</tbody></table></div>`:'<div class="empty"><h3>В группе пока нет студентов</h3><button data-tab="Группы">Добавить студентов</button></div>'}<section class="history"><h2>История занятий</h2>${history.length?history.map(([k,l])=>`<button class="history-row" data-history="${escapeHTML(k)}"><span>${l.date} · ${l.pair} пара</span><span>${escapeHTML(l.topic||'Без темы')}</span><span>→</span></button>`).join(''):'<p class="muted">Здесь появятся заполненные занятия по выбранному предмету.</p>'}</section>`;
 }
 function renderExams() {
   const exam=data.exams.find(e=>e.id===state.examId);
-  return `<section class="panel"><h2>Новая ведомость</h2><div class="filters">${groupSelect()}${subjectSelect()}<label>Форма<select id="exam-type">${options(['Экзамен','Дифференцированный зачёт','Зачёт'],'Экзамен')}</select></label><label>Дата<input id="exam-date" type="date" value="${state.date}"></label><button class="primary" data-action="add-exam" ${state.group?'':'disabled'}>+ Создать</button></div></section><div class="filters">${selectField('Ведомость','examId',[['','Выберите ведомость'],...data.exams.filter(e=>activeGroups().some(g=>g.id===e.group)).map(e=>[e.id,`${e.date} · ${groupName(e.group)} · ${SUBJECTS[e.subject]} · ${e.type}`])],state.examId)}</div>${exam?`<div class="section-head"><div><h2>${escapeHTML(exam.type)}: ${SUBJECTS[exam.subject]}</h2><p class="muted">${exam.date} · ${escapeHTML(groupName(exam.group))}</p></div><button data-action="export-exam">↓ CSV для Excel</button></div><div class="table-wrap"><table><thead><tr><th>Студент</th><th>Результат</th></tr></thead><tbody>${(data.groups.find(g=>g.id===exam.group)?.students||[]).map(s=>`<tr><td>${escapeHTML(s.name)}</td><td><select data-result="${escapeHTML(s.id)}" aria-label="Результат ${escapeHTML(s.name)}">${options(RESULTS,exam.results[s.id],'Не выставлен')}</select></td></tr>`).join('')}</tbody></table></div>`:'<div class="empty"><h3>Ведомости под вашим контролем</h3><p>Создайте экзамен или зачёт, чтобы отмечать допуск и результаты.</p></div>'}`;
+  return `<section class="panel"><h2>Новая ведомость</h2><div class="filters">${groupSelect()}${subjectSelect()}<label>Форма<select id="exam-type">${options(['Экзамен','Дифференцированный зачёт','Зачёт'],'Экзамен')}</select></label><label>Дата<input id="exam-date" type="date" value="${state.date}"></label><button class="primary" data-action="add-exam" ${state.group?'':'disabled'}>+ Создать</button></div></section><div class="filters">${selectField('Ведомость','examId',[['','Выберите ведомость'],...data.exams.filter(e=>activeGroups().some(g=>g.id===e.group)).map(e=>[e.id,`${e.date} · ${groupName(e.group)} · ${SUBJECTS[e.subject]} · ${e.type}`])],state.examId)}</div>${exam?`<div class="section-head"><div><h2>${escapeHTML(exam.type)}: ${SUBJECTS[exam.subject]}</h2><p class="muted">${exam.date} · ${escapeHTML(groupName(exam.group))}</p></div><button data-action="export-exam">↓ CSV для Excel</button></div><div class="table-wrap"><table><thead><tr><th>Студент</th><th>Результат</th></tr></thead><tbody>${(activeStudents(data.groups.find(g=>g.id===exam.group))).map(s=>`<tr><td>${escapeHTML(s.name)}</td><td><select data-result="${escapeHTML(s.id)}" aria-label="Результат ${escapeHTML(s.name)}">${options(RESULTS,exam.results[s.id],'Не выставлен')}</select></td></tr>`).join('')}</tbody></table></div>`:'<div class="empty"><h3>Ведомости под вашим контролем</h3><p>Создайте экзамен или зачёт, чтобы отмечать допуск и результаты.</p></div>'}`;
 }
 function openSlot(slot, requestedGroup) {
   const groups=slotGroups(slot);
@@ -302,7 +353,7 @@ function openSlot(slot, requestedGroup) {
   const group=groups.includes(requestedGroup)?requestedGroup:groups[0];
   const dt=new Date(state.date+'T12:00:00Z'), day=(dt.getUTCDay()+6)%7;
   dt.setUTCDate(dt.getUTCDate()-day+slot.day+(weekOf(state.date)===slot.week?0:7));
-  Object.assign(state,{date:dt.toISOString().slice(0,10),group,subject:slot.subject,pair:slot.pair,tab:'Журнал'}); render();
+  Object.assign(state,{date:dt.toISOString().slice(0,10),group,subject:slot.subject,pair:slot.pair,tab:'Журнал'});journalAutoMessage='';journalCurrentGroupIds=[]; render();
 }
 function showSlot(slot) {
   editSlot={...slot};
@@ -321,6 +372,9 @@ function csv(name, rows) {
   download(name,rows.map(r=>r.map(cell).join(';')).join('\r\n'),'text/csv;charset=utf-8');
 }
 const actions={
+  'current-lesson':()=>{selectCurrentLesson();render();},
+  save:()=>save(false),
+  'sort-groups':()=>{sortGroups();changed();render();$('#group-message').textContent='Группы отсортированы. Нажмите «Сохранить», чтобы закрепить изменения.';},
   print:()=>window.print(),
   'add-task':()=>{const text=$('#task-text').value.trim(), date=$('#task-date').value;if(!text)return alert('Введите задачу');if(!isDate(date))return alert('Выберите срок');data.tasks.push({id:uid(),text,date,done:false});changed();render();},
   'summary-csv':()=>{if(state.from>state.to)return alert('Начало периода должно быть раньше окончания');csv('Сводка.csv',[['Студент','Средний балл','Присутствовал','Пропуски','Уважительные','Опоздания','Не отмечено'],...summaryRows().map(r=>[r.name,r.avg,r.present,r.absent,r.excused,r.late,r.unknown])]);},
@@ -331,7 +385,7 @@ const actions={
     const answer=prompt('Новое название группы',g.name);if(answer===null)return;const name=answer.trim();
     if(!name){$('#group-message').textContent='Название не может быть пустым.';return;}
     if(activeGroups().some(x=>x.id!==g.id&&x.name.toLocaleLowerCase('ru-RU')===name.toLocaleLowerCase('ru-RU'))){$('#group-message').textContent='Группа с таким названием уже существует.';return;}
-    g.name=name;changed();render();$('#group-message').textContent='Название группы изменено.';
+    g.name=name;sortGroups();changed();render();$('#group-message').textContent='Название группы изменено.';
   },
   'delete-group':()=>{
     const g=activeGroup();if(!g)return;
@@ -342,14 +396,14 @@ const actions={
     const input=$('#new-group'), message=$('#group-message'), name=input.value.trim();
     if(!name){message.textContent='Введите название новой группы в поле «Новая группа».';input.focus();return;}
     if(activeGroups().some(g=>g.name.toLocaleLowerCase('ru-RU')===name.toLocaleLowerCase('ru-RU'))){message.textContent='Такая группа уже есть. Выберите её в списке слева.';input.focus();return;}
-    const g={id:uid(),name,students:[]};data.groups.push(g);state.group=g.id;changed();render();
+    const g={id:uid(),name,students:[]};data.groups.push(g);sortGroups();state.group=g.id;changed();render();
     $('#group-message').textContent='Группа «'+name+'» создана. Теперь добавьте студентов.';
   },
-  'add-students':()=>{const g=activeGroup();if(!g)return;const names=[...new Set($('#roster').value.split('\n').map(s=>s.trim()).filter(Boolean))];if(!names.length)return;for(const name of names)if(!g.students.some(s=>s.name===name))g.students.push({id:uid(),name});changed();render();},
-  'all-present':()=>{const l=lesson(true);for(const s of activeGroup()?.students||[])l.marks[s.id]={...(l.marks[s.id]||{grade:'',note:''}),attendance:'Присутствует'};changed();render();},
-  'export-csv':()=>{const l=lesson();csv('Журнал.csv',[['Студент','Дата','Предмет','Пара','Посещаемость','Оценка','Комментарий'],...(activeGroup()?.students||[]).map(s=>[s.name,state.date,SUBJECTS[state.subject],state.pair,l.marks[s.id]?.attendance||'',l.marks[s.id]?.grade||'',l.marks[s.id]?.note||''])]);},
+  'add-students':()=>{const g=activeGroup();if(!g)return;const names=[...new Set($('#roster').value.split('\n').map(s=>s.trim()).filter(Boolean))];if(!names.length)return;for(const name of names)if(!g.students.some(s=>s.name===name))g.students.push({id:uid(),name});else {const previous=g.students.find(s=>s.name===name);if(previous)previous.deleted=false;}changed();render();},
+  'all-present':()=>{const l=lesson(true);for(const s of activeStudents())l.marks[s.id]={...(l.marks[s.id]||{grade:'',note:''}),attendance:'Присутствует'};changed();render();},
+  'export-csv':()=>{const l=lesson();csv('Журнал.csv',[['Студент','Дата','Предмет','Пара','Посещаемость','Оценка','Комментарий'],...(activeStudents()).map(s=>[s.name,state.date,SUBJECTS[state.subject],state.pair,l.marks[s.id]?.attendance||'',l.marks[s.id]?.grade||'',l.marks[s.id]?.note||''])]);},
   'add-exam':()=>{const date=$('#exam-date').value;if(!state.group||!isDate(date))return alert('Выберите группу и дату');const e={id:uid(),group:state.group,subject:state.subject,date,type:$('#exam-type').value,results:{}};data.exams.push(e);state.examId=e.id;changed();render();},
-  'export-exam':()=>{const e=data.exams.find(e=>e.id===state.examId);if(!e)return;csv('Ведомость.csv',[['Студент','Группа','Предмет','Дата','Форма','Результат'],...(data.groups.find(g=>g.id===e.group)?.students||[]).map(s=>[s.name,groupName(e.group),SUBJECTS[e.subject],e.date,e.type,e.results[s.id]||''])]);},
+  'export-exam':()=>{const e=data.exams.find(e=>e.id===state.examId);if(!e)return;csv('Ведомость.csv',[['Студент','Группа','Предмет','Дата','Форма','Результат'],...(activeStudents(data.groups.find(g=>g.id===e.group))).map(s=>[s.name,groupName(e.group),SUBJECTS[e.subject],e.date,e.type,e.results[s.id]||''])]);},
   'close-slot':()=>$('#slot-dialog').close(),
   'delete-slot':()=>{if(confirm('Удалить эту пару? Записи журнала сохранятся.')){data.schedule=data.schedule.filter(s=>s.id!==editSlot.id);changed();$('#slot-dialog').close();render();}}
 };
@@ -359,18 +413,21 @@ document.addEventListener('click',e=>{
   if(b.dataset.taskDelete){if(confirm('Удалить задачу?')){data.tasks=data.tasks.filter(t=>t.id!==b.dataset.taskDelete);changed();render();}return;}
   if(b.dataset.restoreGroup){restoreGroup(b.dataset.restoreGroup);return;}
   if(b.dataset.action) return actions[b.dataset.action]?.();
-  if(b.dataset.tab) {state.tab=b.dataset.tab;if(state.tab==='Расписание')state.week=weekOf(today());render();}
+  if(b.dataset.tab) {state.tab=b.dataset.tab;if(state.tab==='Журнал')selectCurrentLesson();if(state.tab==='Расписание')state.week=weekOf(today());render();}
   if(b.dataset.week) {state.week=Number(b.dataset.week);render();}
   if(b.dataset.open) {const slot=data.schedule.find(s=>s.id===b.dataset.open);if(slot)openSlot(slot,b.dataset.openGroup);}
   if(b.dataset.editSlot) {const slot=data.schedule.find(s=>s.id===b.dataset.editSlot);if(slot)showSlot(slot);}
   if(b.dataset.newSlot) {const [day,pair]=b.dataset.newSlot.split(',').map(Number);showSlot({id:uid(),week:state.week,day,pair,subject:0,type:'Практика',group:'',room:''});}
+  if(b.dataset.removeStudent){removeStudent(b.dataset.removeStudent);return;}
+  if(b.dataset.restoreStudent){restoreStudent(b.dataset.restoreStudent);return;}
+  if(b.dataset.currentGroup&&journalCurrentGroupIds.includes(b.dataset.currentGroup)){state.group=b.dataset.currentGroup;render();return;}
   if(b.dataset.renameStudent) {const s=activeGroup()?.students.find(x=>x.id===b.dataset.renameStudent);if(!s)return;const name=prompt('ФИО студента',s.name)?.trim();if(name){s.name=name;changed();render();}}
-  if(b.dataset.history) {const l=data.lessons[b.dataset.history];if(l){state.date=l.date;state.pair=l.pair;render();}}
+  if(b.dataset.history) {const l=data.lessons[b.dataset.history];if(l){state.date=l.date;state.pair=l.pair;journalAutoMessage='';journalCurrentGroupIds=[];render();}}
 });
 document.addEventListener('keydown',e=>{if(e.key==='Enter'&&e.target.id==='new-group'){e.preventDefault();actions['add-group']();}});
 document.addEventListener('change',e=>{
   const el=e.target;
-  if(el.dataset.filter){const f=el.dataset.filter;if(['date','from','to'].includes(f)&&!isDate(el.value))return;state[f]=['subject','pair'].includes(f)?Number(el.value):el.value;render();}
+  if(el.dataset.filter){const f=el.dataset.filter;if(['date','from','to'].includes(f)&&!isDate(el.value))return;state[f]=['subject','pair'].includes(f)?Number(el.value):el.value;if(state.tab==='Журнал'){journalAutoMessage='';journalCurrentGroupIds=[];}render();}
   if(el.dataset.mark&&el.tagName==='SELECT') updateMark(el);
   if(el.dataset.result){const exam=data.exams.find(x=>x.id===state.examId);if(exam){exam.results[el.dataset.result]=el.value;changed();}}
 });
@@ -386,7 +443,7 @@ $('#backup-file').addEventListener('change',async e=>{
 
 function summaryRows() {
   const lessons=Object.values(data.lessons).filter(l=>l.group===state.group&&l.subject===state.subject&&l.date>=state.from&&l.date<=state.to);
-  return (activeGroup()?.students||[]).map(student=>{
+  return (activeStudents()).map(student=>{
     const marks=lessons.map(l=>l.marks[student.id]||{}), grades=marks.map(m=>Number(m.grade)).filter(n=>n>=2&&n<=5);
     const count=value=>marks.filter(m=>m.attendance===value).length;
     return {name:student.name,avg:grades.length?(grades.reduce((a,b)=>a+b,0)/grades.length).toFixed(2):'—',present:count('Присутствует'),absent:count('Отсутствует'),excused:count('Уважительная причина'),late:count('Опоздал'),unknown:marks.filter(m=>!m.attendance).length};
@@ -401,5 +458,6 @@ function renderTasks() {
   return `<section class="panel"><h2>Что подготовить?</h2><div class="filters"><label class="task-text">Задача<input id="task-text" maxlength="500" placeholder="Например: распечатать самостоятельную для ИСиП-01"></label><label>Срок<input id="task-date" type="date" value="${state.date}"></label><button class="primary" data-action="add-task">+ Добавить</button></div></section><div class="section-head"><h2>Список дел <span class="count">${tasks.filter(t=>!t.done).length} осталось</span></h2></div><div class="task-list">${tasks.map(t=>`<article class="task-card ${t.done?'completed':''}"><button data-task-toggle="${escapeHTML(t.id)}" aria-label="${t.done?'Вернуть в работу':'Выполнить задачу'}" aria-pressed="${t.done}">${t.done?'✓':'○'}</button><div><p>${escapeHTML(t.text)}</p><small class="${!t.done&&t.date<today()?'absence':''}">${t.date}${!t.done&&t.date<today()?' · срок прошёл':''}</small></div><button data-task-delete="${escapeHTML(t.id)}" aria-label="Удалить задачу">×</button></article>`).join('')||'<div class="empty"><h3>Пока всё спокойно</h3><p>Добавьте первое дело к следующему занятию.</p></div>'}</div>`;
 }
 
+if(state.tab==='Журнал')selectCurrentLesson();
 render();
-if(importedPhoto)changed();
+if(importedPhoto){dirty=true;status='Начальные данные подготовлены · нажмите «Сохранить»';updateStatus();}

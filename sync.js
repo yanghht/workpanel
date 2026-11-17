@@ -46,7 +46,7 @@
     }return refreshPromise;
   }
   function typing(){return /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName)||document.querySelector('#slot-dialog')?.open;}
-  function changed(){if(applying)return;conflicts=null;if(account())setMessage('Есть изменения на устройстве · нажмите «Синхронизировать сейчас»');}
+  function changed(){if(applying)return;conflicts=null;if(account())setMessage(dirty?'Есть несохранённые изменения · сначала нажмите «Сохранить»':'Есть сохранённые изменения · нажмите «Синхронизировать сейчас»');}
   function describe(c){
     const labels={groups:'Группы',students:'Студенты',schedule:'Расписание',lessons:'Занятия',marks:'Отметки',grade:'Оценка',attendance:'Посещаемость',note:'Комментарий',name:'Название / ФИО',topic:'Тема',homework:'Домашнее задание',tasks:'Дела',text:'Текст',done:'Выполнение',room:'Аудитория',subject:'Предмет',type:'Вид занятия',exams:'Аттестация',results:'Результаты',date:'Дата',settings:'Настройки',anchor:'Начало первой недели'};
     return c.path.map(part=>labels[part]||data.groups.find(g=>g.id===part)?.name||data.groups.flatMap(g=>g.students).find(s=>s.id===part)?.name||part).join(' → ');
@@ -63,7 +63,7 @@
     const id=account();
     if(!id||running||localStorage.getItem(BIND)!==id)return;
     if(!navigator.onLine){setMessage('Без сети · изменения ждут отправки');return;}
-    if(dirty||loadError){setMessage('Автосохранение не завершено. Скачайте резервную копию и проверьте журнал.');return;}
+    if(dirty||loadError){setMessage('Есть несохранённые изменения. Сначала нажмите «Сохранить» в журнале, затем повторите синхронизацию.');return;}
     if(typing()&&!choices){setMessage('Синхронизация отложена: завершите ввод и нажмите кнопку синхронизации.');return;}
     if(conflicts&&!choices){setMessage('Нужно выбрать правильные значения · откройте синхронизацию');return;}
     running=true;setMessage('Синхронизируем…');
@@ -87,7 +87,7 @@
         }
         ensure();
         // Never replace an edit made while the request was in flight.
-        if(!M.equal(data,start)){setMessage('Новые изменения ожидают отправки · нажмите кнопку синхронизации');return;}
+        if(dirty||!M.equal(data,start)){setMessage('Новые изменения ожидают отправки · нажмите кнопку синхронизации');return;}
         if(!M.equal(data,committed)){
           localStorage.setItem('teacher-cloud-before-merge-'+id,JSON.stringify(data));
           applying=true;const previous=data;data=committed;

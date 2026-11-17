@@ -3,7 +3,7 @@
   const label=document.querySelector('#offline-status'), button=document.querySelector('#offline-update'), refreshButton=document.querySelector('#app-refresh');
   let ready=false, registration, refreshing=false;
   function canReload(){
-    if(typeof dirty!=='undefined'&&dirty){alert('Есть несохранённые изменения. Скачайте резервную копию и устраните ошибку автосохранения перед обновлением.');return false;}
+    if(typeof dirty!=='undefined'&&dirty){alert('Есть несохранённые изменения. Сначала нажмите «Сохранить» в журнале, затем повторите обновление.');return false;}
     return true;
   }
   function reloadPage(){if(!canReload())return;if(typeof rememberView==='function')rememberView();location.reload();}
