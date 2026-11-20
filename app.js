@@ -110,6 +110,7 @@ function validData(d) {
   return isObject(d) && (d.settings===undefined || (isObject(d.settings) && isDate(d.settings.anchor) && new Date(d.settings.anchor+'T12:00:00Z').getUTCDay()===1)) && (d.tasks===undefined || (Array.isArray(d.tasks) && d.tasks.every(t=>isObject(t)&&isString(t.id)&&isString(t.text)&&isDate(t.date)&&typeof t.done==='boolean'))) && Array.isArray(d.groups) && d.groups.every(g => isObject(g) && isString(g.id) && isString(g.name) && (g.deleted===undefined||typeof g.deleted==='boolean') && Array.isArray(g.students) && g.students.every(s => isObject(s) && isString(s.id) && isString(s.name) && (s.deleted===undefined||typeof s.deleted==='boolean')))
     && Array.isArray(d.schedule) && d.schedule.every(s => isObject(s) && isString(s.id) && [1,2].includes(s.week) && Number.isInteger(s.day) && s.day>=0 && s.day<=5 && pair(s.pair) && subject(s.subject) && isString(s.type) && isString(s.group) && (s.groups===undefined || (Array.isArray(s.groups)&&s.groups.every(isString))) && isString(s.room))
     && isObject(d.lessons) && Object.values(d.lessons).every(l => isObject(l) && (l.deleted===undefined||typeof l.deleted==='boolean') && isString(l.group) && isDate(l.date) && pair(l.pair) && subject(l.subject) && isString(l.topic) && isString(l.homework) && isObject(l.marks) && Object.values(l.marks).every(m => isObject(m) && ATTENDANCE.includes(m.attendance) && GRADES.includes(m.grade) && isString(m.note)))
+    && (d.ktp===undefined || (Array.isArray(d.ktp)&&d.ktp.every(r=>isObject(r)&&isString(r.id)&&isString(r.group)&&subject(r.subject)&&['Практика','Лекция'].includes(r.type)&&isDate(r.date)&&isString(r.number)&&isString(r.topic)&&isString(r.notes)&&(r.deleted===undefined||typeof r.deleted==='boolean')&&(r.sourceLesson===undefined||isString(r.sourceLesson)))))
     && Array.isArray(d.exams) && d.exams.every(e => isObject(e) && isString(e.id) && isString(e.group) && subject(e.subject) && isDate(e.date) && isString(e.type) && isObject(e.results) && Object.values(e.results).every(x => RESULTS.includes(x)));
 }
 
@@ -132,7 +133,7 @@ try{savedView=JSON.parse(localStorage.getItem(VIEW_KEY)||'null');}catch{}
 function restoreView(view){
   if(!isObject(view)||!isObject(view.state))return;
   const v=view.state;
-  if(['Сегодня','Расписание','Журнал','Группы','Аттестация','Сводка','Дела'].includes(v.tab))state.tab=v.tab;
+  if(['Сегодня','Расписание','Журнал','Группы','Аттестация','Сводка','КТП','Дела'].includes(v.tab))state.tab=v.tab==='Дела'?'КТП':v.tab;
   if(data.groups.some(g=>g.id===v.group))state.group=v.group;
   if(Number.isInteger(v.subject)&&v.subject>=0&&v.subject<SUBJECTS.length)state.subject=v.subject;
   if(Number.isInteger(v.pair)&&v.pair>=1&&v.pair<=TIMES.length)state.pair=v.pair;
@@ -147,7 +148,7 @@ function rememberView(){
 }
 let restoreScrollOnce=true;
 let renderedViewKey=null;
-function viewContext(){return JSON.stringify([state.tab,state.group,state.subject,state.date,state.pair,state.examId,state.week,state.from,state.to,state.journalMode,state.journalPeriod,state.journalMonth,state.journalSemester,state.journalFrom,state.journalTo,state.journalSort]);}
+function viewContext(){return JSON.stringify([state.tab,state.group,state.subject,state.date,state.pair,state.examId,state.week,state.from,state.to,state.journalMode,state.journalPeriod,state.journalMonth,state.journalSemester,state.journalFrom,state.journalTo,state.journalSort,state.ktpSubject,state.ktpGroup]);}
 function finishViewRender(areas){
   if(restoreScrollOnce){
     restoreScrollOnce=false;
@@ -274,15 +275,15 @@ function render() {
   if(!activeGroup())state.group=activeGroups()[0]?.id||'';
   if(state.examId&&!data.exams.some(e=>e.id===state.examId&&activeGroups().some(g=>g.id===e.group)))state.examId='';
   const keptAreas=renderedViewKey===viewContext()&&typeof document.querySelectorAll==='function'?[...document.querySelectorAll('.schedule-scroll,.table-wrap')].map(el=>({x:el.scrollLeft||0,y:el.scrollTop||0})):null;
-  const titles={'Сегодня':'Ваш учебный день','Расписание':'Расписание занятий','Журнал':'Электронный журнал','Группы':'Учебные группы','Аттестация':'Зачёты и экзамены','Сводка':'Успеваемость и посещаемость','Дела':'Подготовка к занятиям'};
-  const subtitles={'Сегодня':'Пары, студенты и важные дела — в одном месте.','Расписание':'Две недели из вашего расписания. Нажмите на пару для перехода в журнал.','Журнал':'Посещаемость, оценки и содержание каждого занятия.','Группы':'Добавляйте студентов списком, по одному ФИО на строку.','Аттестация':'Отдельные ведомости и результаты студентов.','Сводка':'Оценки и пропуски по группе, предмету и периоду.','Дела':'Темы, материалы и небольшие задачи к следующей паре.'};
-  $('#app').innerHTML=`<div class="shell"><aside><div class="brand"><span>▤</span><div>Мой журнал<small>Кабинет преподавателя</small></div></div><nav>${['Сегодня','Расписание','Журнал','Группы','Аттестация','Сводка','Дела'].map((t,i)=>`<button data-tab="${t}" class="${state.tab===t?'selected':''}"><span aria-hidden="true">${['◷','▦','▤','♙','✓','▥','☑'][i]}</span>${t}</button>`).join('')}</nav><div class="sidebar-bottom"><span class="avatar">ЯГ</span><div>Гаркушин Я.В.<small>Локальная версия</small></div></div></aside><main><header><div class="crumb">Кабинет преподавателя <span>/ ${state.tab}</span></div><span>Хранение в этом браузере</span></header><div class="page"><div class="heading"><div><p class="eyebrow">2026 / 2027 УЧЕБНЫЙ ГОД</p><h1>${titles[state.tab]}</h1><p class="muted">${subtitles[state.tab]}</p></div><div class="actions"><button id="save-button" class="primary" data-action="save">Сохранить</button><button data-action="print">Печать</button></div></div><div id="save-status" class="save-status" role="status"></div>${loadError?`<div class="error" role="alert">${escapeHTML(loadError)}</div>`:''}<div class="workspace">${renderContent()}</div><footer><span>Изменения записываются на устройство кнопкой «Сохранить». Общую базу можно подключить кнопкой «Аккаунт и синхронизация».</span><div class="actions"><button data-action="backup">↓ Резервная копия</button><button data-action="restore">↑ Восстановить</button></div></footer></div></main></div>`;
+  const titles={'Сегодня':'Ваш учебный день','Расписание':'Расписание занятий','Журнал':'Электронный журнал','Группы':'Учебные группы','Аттестация':'Зачёты и экзамены','Сводка':'Успеваемость и посещаемость','КТП':'Календарно-тематический план'};
+  const subtitles={'Сегодня':'Пары, студенты и важные дела — в одном месте.','Расписание':'Две недели из вашего расписания. Нажмите на пару для перехода в журнал.','Журнал':'Посещаемость, оценки и содержание каждого занятия.','Группы':'Добавляйте студентов списком, по одному ФИО на строку.','Аттестация':'Отдельные ведомости и результаты студентов.','Сводка':'Оценки и пропуски по группе, предмету и периоду.','КТП':'Предметы, группы и история пройденных лекций и практик.'};
+  $('#app').innerHTML=`<div class="shell"><aside><div class="brand"><span>▤</span><div>Мой журнал<small>Кабинет преподавателя</small></div></div><nav>${['Сегодня','Расписание','Журнал','Группы','Аттестация','Сводка','КТП'].map((t,i)=>`<button data-tab="${t}" class="${state.tab===t?'selected':''}"><span aria-hidden="true">${['◷','▦','▤','♙','✓','▥','☑'][i]}</span>${t}</button>`).join('')}</nav><div class="sidebar-bottom"><span class="avatar">ЯГ</span><div>Гаркушин Я.В.<small>Локальная версия</small></div></div></aside><main><header><div class="crumb">Кабинет преподавателя <span>/ ${state.tab}</span></div><span>Хранение в этом браузере</span></header><div class="page"><div class="heading"><div><p class="eyebrow">2026 / 2027 УЧЕБНЫЙ ГОД</p><h1>${titles[state.tab]}</h1><p class="muted">${subtitles[state.tab]}</p></div><div class="actions"><button id="save-button" class="primary" data-action="save">Сохранить</button><button data-action="print">Печать</button></div></div><div id="save-status" class="save-status" role="status"></div>${loadError?`<div class="error" role="alert">${escapeHTML(loadError)}</div>`:''}<div class="workspace">${renderContent()}</div><footer><span>Изменения записываются на устройство кнопкой «Сохранить». Общую базу можно подключить кнопкой «Аккаунт и синхронизация».</span><div class="actions"><button data-action="backup">↓ Резервная копия</button><button data-action="restore">↑ Восстановить</button></div></footer></div></main></div>`;
   updateStatus();
   finishViewRender(keptAreas);
 }
 function renderContent() {
   if(state.tab==='Сводка') return renderSummary();
-  if(state.tab==='Дела') return renderTasks();
+  if(state.tab==='КТП') return typeof renderKtp==='function'?renderKtp():'<p>Открываем КТП…</p>';
   if(state.tab==='Сегодня') return renderToday();
   if(state.tab==='Расписание') return renderSchedule();
   if(state.tab==='Группы') return renderGroups();
@@ -322,7 +323,7 @@ function restoreStudent(id){
 }
 let journalAutoMessage='', journalCurrentGroupIds=[], lastAutoLessonKey='';
 function refreshCurrentJournal(){
-  if(state.tab!=='Журнал'||dirty||$('#slot-dialog')?.open||$('#cloud-dialog')?.open||$('#journal-cell-dialog')?.open||$('#journal-lesson-dialog')?.open||$('#journal-delete-dialog')?.open||/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName))return false;
+  if(state.tab!=='Журнал'||dirty||$('#slot-dialog')?.open||$('#cloud-dialog')?.open||$('#journal-cell-dialog')?.open||$('#journal-lesson-dialog')?.open||$('#journal-delete-dialog')?.open||$('#ktp-dialog')?.open||/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName))return false;
   const current=currentLesson(),key=[current.date,current.pair,current.slot?.id||''].join('|');
   if(key===lastAutoLessonKey)return false;
   selectCurrentLesson();return true;

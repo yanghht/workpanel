@@ -1,10 +1,10 @@
 'use strict';
 // Increase VERSION whenever any app file changes. Each version installs atomically.
-const VERSION = '2026-11-17-calendar-lesson-type-1';
+const VERSION = '2026-11-20-ktp-3';
 const BASE = new URL('./', self.location.href);
 const PREFIX = 'teacher-offline-' + encodeURIComponent(BASE.pathname) + '-';
 const CACHE = PREFIX + VERSION;
-const SHELL = ['index.html','style.css','app.js','journal-table.js','merge.js','cloud-config.js','sync.js','offline.js','manifest.webmanifest','icon-192.png','icon-512.png'];
+const SHELL = ['index.html','style.css','app.js','journal-table.js','ktp.js','merge.js','cloud-config.js','sync.js','offline.js','manifest.webmanifest','icon-192.png','icon-512.png'];
 const urls = SHELL.map(file => new URL(file, BASE).href);
 self.addEventListener('install', event => {
   event.waitUntil((async () => {
